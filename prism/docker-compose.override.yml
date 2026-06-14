@@ -1,0 +1,71 @@
+# Dev override: hot-reload for backend services + Vite dev server for frontend
+services:
+
+  api-router:
+    build:
+      context: ./backend
+      dockerfile: services/router/Dockerfile
+    volumes:
+      - ./backend/services/router/main.py:/app/main.py
+      - ./backend/services/router/common:/app/common
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+
+  api-browser:
+    build:
+      context: ./backend
+      dockerfile: services/browser/Dockerfile
+    volumes:
+      - ./backend/services/browser/main.py:/app/main.py
+      - ./backend/services/router/common:/app/common
+    command: uvicorn main:app --host 0.0.0.0 --port 8002 --reload
+
+  api-crawler:
+    build:
+      context: ./backend
+      dockerfile: services/crawler/Dockerfile
+    volumes:
+      - ./backend/services/crawler/main.py:/app/main.py
+      - ./backend/services/crawler/crawler:/app/crawler
+      - ./backend/services/router/common:/app/common
+      - ./backend/services/wayback/wayback:/app/wayback
+    command: uvicorn main:app --host 0.0.0.0 --port 8003 --reload
+
+  api-wayback:
+    build:
+      context: ./backend
+      dockerfile: services/wayback/Dockerfile
+    volumes:
+      - ./backend/services/wayback/main.py:/app/main.py
+      - ./backend/services/wayback/wayback:/app/wayback
+      - ./backend/services/router/common:/app/common
+    command: uvicorn main:app --host 0.0.0.0 --port 8004 --reload
+
+  api-addressbook:
+    build:
+      context: ./backend
+      dockerfile: services/addressbook/Dockerfile
+    volumes:
+      - ./backend/services/addressbook/main.py:/app/main.py
+      - ./backend/services/router/common:/app/common
+    command: uvicorn main:app --host 0.0.0.0 --port 8005 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: client/Dockerfile
+      target: builder
+    ports:
+      - "5173:80"
+    environment:
+      VITE_PROXY_TARGET: http://nginx
+    volumes:
+      - ./frontend/client/src:/app/client/src
+      - ./frontend/client/index.html:/app/client/index.html
+      - ./frontend/client/package.json:/app/client/package.json
+      - ./frontend/client/pnpm-lock.yaml:/app/client/pnpm-lock.yaml
+      - ./frontend/client/vite.config.ts:/app/client/vite.config.ts
+      - ./frontend/client/tsconfig.json:/app/client/tsconfig.json
+      - ./frontend/client/tsconfig.app.json:/app/client/tsconfig.app.json
+      - ./frontend/client/public:/app/client/public
+      - ./frontend/shared:/app/shared
+    command: sh -c "cd /app/client && corepack enable && pnpm install && pnpm dev --host 0.0.0.0 --port 80"
