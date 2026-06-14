@@ -1,0 +1,88 @@
+services:
+
+  # ── Reverse Proxy ──────────────────────────────────────
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - api-router
+      - api-browser
+      - api-addressbook
+      - frontend
+    networks:
+      - prism
+
+  # ── Frontend ────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: client/Dockerfile
+    expose:
+      - "80"
+    networks:
+      - prism
+
+  # ── Router Dashboard ──────────────────────────────────
+  api-router:
+    build:
+      context: ./backend
+      dockerfile: services/router/Dockerfile
+    expose:
+      - "8001"
+    env_file: .env
+    depends_on:
+      - i2pd
+    networks:
+      - prism
+
+  # ── I2P Browser Proxy ────────────────────────────────
+  api-browser:
+    build:
+      context: ./backend
+      dockerfile: services/browser/Dockerfile
+    expose:
+      - "8002"
+    env_file: .env
+    depends_on:
+      - i2pd
+    networks:
+      - prism
+
+  # ── Addressbook ──────────────────────────────────────
+  api-addressbook:
+    build:
+      context: ./backend
+      dockerfile: services/addressbook/Dockerfile
+    expose:
+      - "8005"
+    env_file: .env
+    depends_on:
+      - i2pd
+    volumes:
+      - i2pd-data:/i2pd-data
+    networks:
+      - prism
+
+  # ── I2P Router ───────────────────────────────────────
+  i2pd:
+    image: purplei2p/i2pd:latest
+    ports:
+      - "4444:4444"   # HTTP proxy
+      - "4445:4445"   # HTTP proxy (.eep)
+      - "7650:7650"   # I2PControl (HTTPS)
+      - "7070:7070"   # Webconsole
+    volumes:
+      - i2pd-data:/home/i2pd/data
+      - ./i2pd/i2pd.conf:/home/i2pd/data/i2pd.conf
+      - ./i2pd/certs/i2pcontrol.crt.pem:/home/i2pd/data/i2pcontrol.crt.pem
+      - ./i2pd/certs/i2pcontrol.key.pem:/home/i2pd/data/i2pcontrol.key.pem
+    networks:
+      - prism
+
+volumes:
+  i2pd-data:
+
+networks:
+  prism:
+    driver: bridge

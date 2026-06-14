@@ -1,0 +1,115 @@
+services:
+  # ── I2P Router ────────────────────────────────────────────
+  i2pd:
+    image: purplei2p/i2pd:latest
+    ports:
+      - "4444:4444"
+      - "4445:4445"
+      - "7650:7650"
+      - "7070:7070"
+    volumes:
+      - i2pd-data:/home/i2pd/data
+      - ../prism/i2pd/i2pd.conf:/home/i2pd/data/i2pd.conf
+      - ../prism/i2pd/certs/i2pcontrol.crt.pem:/home/i2pd/data/i2pcontrol.crt.pem
+      - ../prism/i2pd/certs/i2pcontrol.key.pem:/home/i2pd/data/i2pcontrol.key.pem
+    networks:
+      - abyssal
+
+  # ── Abyssal (Public) ──────────────────────────────────────
+  abyssal-backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    expose:
+      - "8000"
+    env_file: .env
+    depends_on:
+      - i2pd
+    volumes:
+      - abyssal-data:/data
+    networks:
+      - abyssal
+
+  abyssal-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - abyssal-backend
+    networks:
+      - abyssal
+
+  # ── Prism (Private) ───────────────────────────────────────
+  prism-router:
+    build:
+      context: ../prism/backend
+      dockerfile: services/router/Dockerfile
+    expose:
+      - "8001"
+    env_file: .env
+    depends_on:
+      - i2pd
+    networks:
+      - abyssal
+
+  prism-browser:
+    build:
+      context: ../prism/backend
+      dockerfile: services/browser/Dockerfile
+    expose:
+      - "8002"
+    env_file: .env
+    depends_on:
+      - i2pd
+    networks:
+      - abyssal
+
+  prism-addressbook:
+    build:
+      context: ../prism/backend
+      dockerfile: services/addressbook/Dockerfile
+    expose:
+      - "8005"
+    env_file: .env
+    depends_on:
+      - i2pd
+    volumes:
+      - i2pd-data:/i2pd-data
+    networks:
+      - abyssal
+
+  prism-frontend:
+    build:
+      context: ../prism/frontend
+      dockerfile: client/Dockerfile
+    expose:
+      - "80"
+    networks:
+      - abyssal
+
+  # ── Reverse Proxy ─────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - abyssal-frontend
+      - abyssal-backend
+      - prism-frontend
+      - prism-router
+      - prism-browser
+      - prism-addressbook
+    networks:
+      - abyssal
+
+volumes:
+  abyssal-data:
+  i2pd-data:
+
+networks:
+  abyssal:
+    driver: bridge

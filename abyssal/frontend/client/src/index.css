@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  min-height: 100vh;
+}
+
+.search-highlight {
+  @apply text-cyan-400 font-semibold;
+}
+
+/* Smooth scroll for results */
+html {
+  scroll-behavior: smooth;
+}
