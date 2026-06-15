@@ -192,3 +192,72 @@ cd prism/backend && python3 test_api.py
 - Dependencies managed via pnpm; delete stale `package-lock.json` files. Frontend package bumps need `pnpm install` regen.
 - I2PControl Token param removed from non-Authenticate calls (i2pd v2.60.0 rejects it).
 - Security fixes: python-dotenv bumped to 1.2.2 (CVE-2024-28180), esbuild via Vite 8 upgrade (GHSA-67mh-4wv8-2f99).
+
+## Pre-Commit Checklist
+
+Run these checks before every commit to catch regressions early. If a check fails, fix before committing.
+
+### 1. Build
+
+```sh
+# From abyssal/ — builds all project containers
+docker compose build abyssal-frontend abyssal-backend abyssal-tunnel prism-frontend prism-router prism-browser prism-addressbook nginx
+
+# From prism/ — also needed for standalone prism services
+docker compose build api-router api-browser api-addressbook frontend nginx
+```
+
+### 2. Container Health
+
+```sh
+docker compose ps --status running          # all 8 containers: Up
+docker compose logs abyssal-tunnel --tail 5  # SAM sessions: RESULT=OK for both tunnels
+docker compose logs nexus-i2pd-1 --tail 20   # no LeaseSet/Publish errors
+```
+
+### 3. API Smoke Tests
+
+```sh
+# Health (was 404 without nginx fix)
+curl -s http://localhost/api/health
+
+# Status (confirms I2PControl Token fix works)
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/status
+
+# Bandwidth, tunnels, router info, health
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/bandwidth
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/tunnels
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/router-health
+
+# Abyssal public endpoints (no API key needed)
+curl -s http://localhost/api/abyssal/facets
+```
+
+### 4. Frontend Load
+
+```sh
+curl -s -o /dev/null -w "%{http_code}" http://localhost/          # expect 200 (Abyssal search)
+curl -s -o /dev/null -w "%{http_code}" http://localhost/dashboard/ # expect 200 (Prism dashboard)
+```
+
+### 5. Routing
+
+```sh
+# Prism API behind nginx
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/router-info
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/transports
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/local-destinations
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/commands
+
+# Abyssal backend
+curl -s http://localhost/api/abyssal/search?q=test
+curl -s http://localhost/api/abyssal/sites
+```
+
+### 6. Git Hygiene
+
+- [ ] No secrets committed: `git diff --cached` shows no real API keys, passwords, or certs
+- [ ] No stale lock files: `package-lock.json` deleted if `pnpm-lock.yaml` exists
+- [ ] `AGENTS.md` updated with new conventions, services, or commands
+- [ ] Docs updated (`prism/SESSION_PROMPT.md`, `prism/AGENTS.md`) for Prism-specific changes
+- [ ] Commit message matches repo style (concise, prefixed by subsystem if applicable)
