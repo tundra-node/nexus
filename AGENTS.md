@@ -215,46 +215,158 @@ docker compose logs abyssal-tunnel --tail 5  # SAM sessions: RESULT=OK for both 
 docker compose logs nexus-i2pd-1 --tail 20   # no LeaseSet/Publish errors
 ```
 
-### 3. API Smoke Tests
+### 3. I2P Router & Eepsite
 
 ```sh
-# Health (was 404 without nginx fix)
-curl -s http://localhost/api/health
-
-# Status (confirms I2PControl Token fix works)
+# Router status — confirms I2PControl Token fix works, network is online
 curl -s -H "x-api-key: dev-key-12345" http://localhost/api/status
+# Expect: "status":"online", active_peers > 0, tunnel_count > 0
 
-# Bandwidth, tunnels, router info, health
-curl -s -H "x-api-key: dev-key-12345" http://localhost/api/bandwidth
-curl -s -H "x-api-key: dev-key-12345" http://localhost/api/tunnels
+# Router health — composite score
 curl -s -H "x-api-key: dev-key-12345" http://localhost/api/router-health
+# Expect: health_score > 0, network.routers_known > 0
 
-# Abyssal public endpoints (no API key needed)
-curl -s http://localhost/api/abyssal/facets
+# SAM tunnel — both eepsite destinations created successfully
+docker logs nexus-abyssal-tunnel-1 2>&1 | grep "RESULT=OK"
+# Expect: 2 lines, one for abyssal and one for abyssal-api
+
+# Eepsite b32 addresses (search engine + API)
+docker logs nexus-abyssal-tunnel-1 2>&1 | grep "\.b32\.i2p"
+# Expect: 2 lines with *.b32.i2p addresses
+
+# LeaseSet — no publish failures
+docker logs nexus-i2pd-1 2>&1 | grep -i "Publish confirmation was not received"
+# Expect: empty (no output = no errors)
 ```
 
-### 4. Frontend Load
+### 4. Abyssal Search Engine — API
 
 ```sh
-curl -s -o /dev/null -w "%{http_code}" http://localhost/          # expect 200 (Abyssal search)
-curl -s -o /dev/null -w "%{http_code}" http://localhost/dashboard/ # expect 200 (Prism dashboard)
-```
-
-### 5. Routing
-
-```sh
-# Prism API behind nginx
-curl -s -H "x-api-key: dev-key-12345" http://localhost/api/router-info
-curl -s -H "x-api-key: dev-key-12345" http://localhost/api/transports
-curl -s -H "x-api-key: dev-key-12345" http://localhost/api/local-destinations
-curl -s -H "x-api-key: dev-key-12345" http://localhost/api/commands
-
-# Abyssal backend
+# Search (FTS5) — public endpoint
 curl -s http://localhost/api/abyssal/search?q=test
+# Expect: JSON with results array (may be empty if no crawled data)
+
+# Facets — available languages and site types
+curl -s http://localhost/api/abyssal/facets
+# Expect: JSON with languages and site_types arrays
+
+# Directory — discovered sites
 curl -s http://localhost/api/abyssal/sites
+# Expect: JSON with sites array (may be empty)
+
+# Site link graph
+curl -s http://localhost/api/abyssal/graph
+# Expect: JSON with nodes + edges arrays
+
+# Wayback stats
+curl -s http://localhost/api/abyssal/wayback/stats
+# Expect: JSON with archive stats (totals, etc.)
 ```
 
-### 6. Git Hygiene
+### 5. Abyssal Crawler — API
+
+```sh
+# List crawl jobs
+curl -s -H "api-key: dev-key-12345" http://localhost/api/abyssal/crawl/jobs
+# Expect: JSON with jobs array, status 200
+
+# Start a crawl job (optional — only run if you want to actually crawl)
+# curl -s -X POST -H "api-key: dev-key-12345" -H "Content-Type: application/json" \
+#   -d '{"seed":"http://example.i2p","max_pages":5,"depth":1}' \
+#   http://localhost/api/abyssal/crawl/start
+```
+
+### 6. Prism Dashboard — API + Frontend
+
+```sh
+# Dashboard frontend loads
+curl -s -o /dev/null -w "%{http_code}" http://localhost/dashboard/
+# Expect: 200
+
+# Router info (used by dashboard info cards)
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/router-info
+# Expect: JSON with version, identity, uptime, net_id
+
+# Bandwidth (used by bandwidth card + chart)
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/bandwidth
+# Expect: JSON with inbound_rate, outbound_rate
+
+# Tunnel list (used by tunnel manager)
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/tunnels
+# Expect: JSON with tunnels array + total
+
+# Router details (used by identity, contribution, services cards)
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/router-details
+# Expect: JSON with identity, caps, version, services, etc.
+
+# Transports
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/transports
+# Expect: JSON with transports array
+
+# Local I2P destinations
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/local-destinations
+# Expect: JSON with destinations array
+
+# Commands (i2pd control)
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/commands
+# Expect: JSON with commands array
+```
+
+### 7. Prism Browser — API
+
+```sh
+# Bookmark list
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/browser/bookmarks
+# Expect: JSON with bookmarks array
+
+# Add a bookmark (cleanup: delete it after)
+curl -s -X POST -H "x-api-key: dev-key-12345" -H "Content-Type: application/json" \
+  -d '{"name":"Test","url":"http://test.i2p"}' \
+  http://localhost/api/browser/bookmarks
+# Expect: 200 or 201, bookmark created
+
+# Delete the test bookmark
+# curl -s -X DELETE -H "x-api-key: dev-key-12345" http://localhost/api/browser/bookmarks/1
+```
+
+### 8. Prism Addressbook — API
+
+```sh
+# List subscriptions
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/addressbook/subscriptions
+# Expect: JSON with subscriptions array
+
+# Subscribe (add a subscription)
+# curl -s -X POST -H "x-api-key: dev-key-12345" -H "Content-Type: application/json" \
+#   -d '{"url":"http://example.i2p/subscriptions.txt"}' \
+#   http://localhost/api/addressbook/subscribe
+```
+
+### 9. Abyssal Frontend — Search Engine SPA
+
+```sh
+curl -s -o /dev/null -w "%{http_code}" http://localhost/
+# Expect: 200 (Abyssal search SPA loads)
+
+curl -s http://localhost/ | grep -o "search\|Search\|abyssal\|Abyssal"
+# Expect: non-empty — page contains search-related content
+```
+
+### 10. Prism Dashboard — Full-Stack Integration
+
+```sh
+# Composite: frontend HTML loads AND its API calls succeed
+# The dashboard polls /api/status every 1s — check that it returns data
+curl -s -H "x-api-key: dev-key-12345" http://localhost/api/status | grep -o "online"
+# Expect: "online"
+
+# Dashboard SPA references working API endpoints
+# Health endpoint (should now return 200, was 404 before nginx fix)
+curl -s http://localhost/api/health
+# Expect: {"status":"ok","timestamp":"..."}
+```
+
+### 11. Git Hygiene
 
 - [ ] No secrets committed: `git diff --cached` shows no real API keys, passwords, or certs
 - [ ] No stale lock files: `package-lock.json` deleted if `pnpm-lock.yaml` exists
