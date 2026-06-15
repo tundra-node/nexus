@@ -1,6 +1,9 @@
 # Stage 1: Build
 FROM node:22-alpine AS builder
 
+ARG VITE_API_KEY
+ENV VITE_API_KEY=$VITE_API_KEY
+
 WORKDIR /app
 
 # Build context must be ./frontend (contains client/ and shared/)

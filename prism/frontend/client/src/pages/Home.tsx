@@ -188,29 +188,31 @@ export default function Home() {
             )}
           </section>
 
-          {/* Bandwidth, Router Info, Network */}
-          <section className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <div className="mb-4">
-                <h2 className="text-lg font-semibold">Network Activity</h2>
-                <p className="text-sm text-muted-foreground">Current bandwidth usage</p>
+          {/* Network Activity */}
+          <section>
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold">Network Activity</h2>
+              <p className="text-sm text-muted-foreground">Current bandwidth usage</p>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div>
+                {bandwidth.data ? (
+                  <BandwidthCard
+                    inbound_rate={bandwidth.data.inbound_rate}
+                    outbound_rate={bandwidth.data.outbound_rate}
+                    total_inbound={bandwidth.data.total_inbound}
+                    total_outbound={bandwidth.data.total_outbound}
+                    loading={bandwidth.loading}
+                    error={bandwidth.error}
+                  />
+                ) : (
+                  <div className="rounded-lg border border-dashed border-muted-foreground/25 py-12 text-center">
+                    <p className="text-sm text-muted-foreground">Loading bandwidth data...</p>
+                  </div>
+                )}
               </div>
-              {bandwidth.data ? (
-                <BandwidthCard
-                  inbound_rate={bandwidth.data.inbound_rate}
-                  outbound_rate={bandwidth.data.outbound_rate}
-                  total_inbound={bandwidth.data.total_inbound}
-                  total_outbound={bandwidth.data.total_outbound}
-                  loading={bandwidth.loading}
-                  error={bandwidth.error}
-                />
-              ) : (
-                <div className="rounded-lg border border-dashed border-muted-foreground/25 py-12 text-center">
-                  <p className="text-sm text-muted-foreground">Loading bandwidth data...</p>
-                </div>
-              )}
 
-              <Card className="mt-4">
+              <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center justify-between text-sm">
                     <span>Bandwidth Limits (KB/s)</span>
@@ -267,88 +269,86 @@ export default function Home() {
                   </div>
                 </CardContent>
               </Card>
-
             </div>
+          </section>
 
-            <div>
-              <div className="mb-4">
-                <h2 className="text-lg font-semibold">Info</h2>
-                <p className="text-sm text-muted-foreground">Router details</p>
+          {/* Router Info */}
+          <section>
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold">Info</h2>
+              <p className="text-sm text-muted-foreground">Router details</p>
+            </div>
+            {routerDetails.data ? (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                <RouterInfo
+                  version={routerInfo.data?.version ?? ""}
+                  identity={routerInfo.data?.identity ?? ""}
+                  uptime={routerInfo.data?.uptime ?? 0}
+                  net_id={routerInfo.data?.net_id ?? 2}
+                  loading={routerInfo.loading}
+                  error={routerInfo.error}
+                />
+                <RouterHealthCard
+                  score={routerHealth.data?.health_score ?? 0}
+                  status={routerHealth.data?.status ?? "unknown"}
+                  active_peers={routerHealth.data?.active_peers ?? 0}
+                  tunnels={routerHealth.data?.tunnels ?? { inbound: 0, outbound: 0, total: 0 }}
+                  bandwidth={routerHealth.data?.bandwidth ?? { inbound_kbps: 0, outbound_kbps: 0 }}
+                  network={routerHealth.data?.network ?? { status: "unknown", routers_known: 0, floodfills: 0, leasesets: 0, tunnel_success_rate_pct: 0 }}
+                  flags={routerHealth.data?.flags ?? { floodfill: false, reachable: false }}
+                  loading={routerHealth.loading}
+                  error={routerHealth.error}
+                />
+                <ContributionCard
+                  transit={routerDetails.data.transit}
+                  received={routerDetails.data.received}
+                  sent={routerDetails.data.sent}
+                  uptime={routerDetails.data.uptime}
+                  transit_tunnels={routerDetails.data.transit_tunnels}
+                  routers={routerDetails.data.routers}
+                  floodfills={routerDetails.data.floodfills}
+                  tunnel_success_rate={routerDetails.data.tunnel_success_rate}
+                  error={routerDetails.error}
+                />
+                {transports.data.length > 0 && (
+                  <TransportsCard transports={transports.data} />
+                )}
+                {localDests.data.length > 0 && (
+                  <LocalDestinationsCard destinations={localDests.data} />
+                )}
+                <RouterIdentityCard
+                  identity={routerDetails.data.identity}
+                  caps={routerDetails.data.caps}
+                  external_address={routerDetails.data.external_address}
+                  routers={routerDetails.data.routers}
+                  floodfills={routerDetails.data.floodfills}
+                  leasesets={routerDetails.data.leasesets}
+                  client_tunnels={routerDetails.data.client_tunnels}
+                  transit_tunnels={routerDetails.data.transit_tunnels}
+                  network_status={routerDetails.data.network_status}
+                  loading={routerDetails.loading}
+                  error={routerDetails.error}
+                />
+                <ServicesCard services={routerDetails.data.services} error={routerDetails.error} />
               </div>
-              {routerDetails.data ? (
-                <div className="grid gap-6 sm:grid-cols-2">
+            ) : (
+              <>
+                {routerInfo.data ? (
                   <RouterInfo
-                    version={routerInfo.data?.version ?? ""}
-                    identity={routerInfo.data?.identity ?? ""}
-                    uptime={routerInfo.data?.uptime ?? 0}
-                    net_id={routerInfo.data?.net_id ?? 2}
+                    version={routerInfo.data.version}
+                    identity={routerInfo.data.identity}
+                    uptime={routerInfo.data.uptime}
+                    net_id={routerInfo.data.net_id}
                     loading={routerInfo.loading}
                     error={routerInfo.error}
                   />
-                  {routerHealth.data && (
-                    <RouterHealthCard
-                      score={routerHealth.data.health_score}
-                      status={routerHealth.data.status}
-                      active_peers={routerHealth.data.active_peers}
-                      tunnels={routerHealth.data.tunnels}
-                      bandwidth={routerHealth.data.bandwidth}
-                      network={routerHealth.data.network}
-                      flags={routerHealth.data.flags}
-                      loading={routerHealth.loading}
-                      error={routerHealth.error}
-                    />
-                  )}
-                  <ContributionCard
-                    transit={routerDetails.data.transit}
-                    received={routerDetails.data.received}
-                    sent={routerDetails.data.sent}
-                    uptime={routerDetails.data.uptime}
-                    transit_tunnels={routerDetails.data.transit_tunnels}
-                    routers={routerDetails.data.routers}
-                    floodfills={routerDetails.data.floodfills}
-                    tunnel_success_rate={routerDetails.data.tunnel_success_rate}
-                    error={routerDetails.error}
-                  />
-                  {transports.data.length > 0 && (
-                    <TransportsCard transports={transports.data} />
-                  )}
-                  {localDests.data.length > 0 && (
-                    <LocalDestinationsCard destinations={localDests.data} />
-                  )}
-                  <RouterIdentityCard
-                    identity={routerDetails.data.identity}
-                    caps={routerDetails.data.caps}
-                    external_address={routerDetails.data.external_address}
-                    routers={routerDetails.data.routers}
-                    floodfills={routerDetails.data.floodfills}
-                    leasesets={routerDetails.data.leasesets}
-                    client_tunnels={routerDetails.data.client_tunnels}
-                    transit_tunnels={routerDetails.data.transit_tunnels}
-                    network_status={routerDetails.data.network_status}
-                    loading={routerDetails.loading}
-                    error={routerDetails.error}
-                  />
-                  <ServicesCard services={routerDetails.data.services} error={routerDetails.error} />
-                </div>
-              ) : (
-                <>
-                  {routerInfo.data ? (
-                    <RouterInfo
-                      version={routerInfo.data.version}
-                      identity={routerInfo.data.identity}
-                      uptime={routerInfo.data.uptime}
-                      net_id={routerInfo.data.net_id}
-                      loading={routerInfo.loading}
-                      error={routerInfo.error}
-                    />
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-muted-foreground/25 py-12 text-center">
-                      <p className="text-sm text-muted-foreground">Loading router info...</p>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-muted-foreground/25 py-12 text-center">
+                    <p className="text-sm text-muted-foreground">Loading router info...</p>
+                  </div>
+                )}
+              </>
+            )}
           </section>
 
           {/* Tunnel Manager */}
