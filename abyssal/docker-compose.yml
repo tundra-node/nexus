@@ -1,25 +1,50 @@
+name: nexus
+
 services:
   # ── I2P Router ────────────────────────────────────────────
   i2pd:
     image: purplei2p/i2pd:latest
+    restart: unless-stopped
     ports:
       - "4444:4444"
       - "4445:4445"
       - "7650:7650"
       - "7070:7070"
+      - "10472:10472"
+      - "10472:10472/udp"
     volumes:
       - i2pd-data:/home/i2pd/data
       - ../prism/i2pd/i2pd.conf:/home/i2pd/data/i2pd.conf
+      - ../prism/i2pd/tunnels.conf:/home/i2pd/data/tunnels.conf
       - ../prism/i2pd/certs/i2pcontrol.crt.pem:/home/i2pd/data/i2pcontrol.crt.pem
       - ../prism/i2pd/certs/i2pcontrol.key.pem:/home/i2pd/data/i2pcontrol.key.pem
+    dns:
+      - 8.8.8.8
     networks:
-      - abyssal
+      abyssal:
+        ipv4_address: 172.18.0.2
 
   # ── Abyssal (Public) ──────────────────────────────────────
+  abyssal-tunnel:
+    build:
+      context: ../prism/i2pd/abyssal-tunnel
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      SAM_HOST: i2pd
+    depends_on:
+      - i2pd
+      - abyssal-frontend
+      - abyssal-backend
+    networks:
+      abyssal:
+        ipv4_address: 172.18.0.10
+
   abyssal-backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    restart: unless-stopped
     expose:
       - "8000"
     env_file: .env
@@ -28,48 +53,56 @@ services:
     volumes:
       - abyssal-data:/data
     networks:
-      - abyssal
+      abyssal:
+        ipv4_address: 172.18.0.3
 
   abyssal-frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    restart: unless-stopped
     expose:
       - "80"
     depends_on:
       - abyssal-backend
     networks:
-      - abyssal
+      abyssal:
+        ipv4_address: 172.18.0.4
 
   # ── Prism (Private) ───────────────────────────────────────
   prism-router:
     build:
       context: ../prism/backend
       dockerfile: services/router/Dockerfile
+    restart: unless-stopped
     expose:
       - "8001"
     env_file: .env
     depends_on:
       - i2pd
     networks:
-      - abyssal
+      abyssal:
+        ipv4_address: 172.18.0.5
 
   prism-browser:
     build:
       context: ../prism/backend
       dockerfile: services/browser/Dockerfile
+    restart: unless-stopped
     expose:
       - "8002"
     env_file: .env
     depends_on:
       - i2pd
     networks:
-      - abyssal
+      abyssal:
+        ipv4_address: 172.18.0.6
 
   prism-addressbook:
     build:
       context: ../prism/backend
       dockerfile: services/addressbook/Dockerfile
+    restart: unless-stopped
     expose:
       - "8005"
     env_file: .env
@@ -78,20 +111,26 @@ services:
     volumes:
       - i2pd-data:/i2pd-data
     networks:
-      - abyssal
+      abyssal:
+        ipv4_address: 172.18.0.7
 
   prism-frontend:
     build:
       context: ../prism/frontend
       dockerfile: client/Dockerfile
+      args:
+        VITE_API_KEY: ${API_KEY:-dev-key-12345}
+    restart: unless-stopped
     expose:
       - "80"
     networks:
-      - abyssal
+      abyssal:
+        ipv4_address: 172.18.0.8
 
   # ── Reverse Proxy ─────────────────────────────────────────
   nginx:
     image: nginx:alpine
+    restart: unless-stopped
     ports:
       - "80:80"
     volumes:
@@ -104,7 +143,8 @@ services:
       - prism-browser
       - prism-addressbook
     networks:
-      - abyssal
+      abyssal:
+        ipv4_address: 172.18.0.9
 
 volumes:
   abyssal-data:
@@ -113,3 +153,6 @@ volumes:
 networks:
   abyssal:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/24
