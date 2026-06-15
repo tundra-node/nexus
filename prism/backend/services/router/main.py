@@ -162,7 +162,7 @@ class I2PControlSession:
             "jsonrpc": "2.0",
             "id": 1,
             "method": method,
-            "params": {"Token": self.token, **fields},
+            "params": fields,
         }
 
         response = await client.post(
@@ -174,7 +174,6 @@ class I2PControlSession:
         if data.get("error"):
             if data["error"].get("code") in (-32001, -32700):
                 await self.authenticate()
-                payload["params"]["Token"] = self.token
                 response = await client.post(
                     I2PD_API_URL,
                     json=payload,

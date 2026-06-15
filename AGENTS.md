@@ -24,7 +24,7 @@ Dev key (both projects): `dev-key-12345`
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 19 + TypeScript + Vite 6 + Tailwind CSS 4 + shadcn/ui + wouter |
+| Frontend | React 19 + TypeScript 6 + Vite 8 + Tailwind CSS 4 + shadcn/ui + wouter |
 | Backend | Python 3.11 FastAPI + httpx + aiosqlite + BeautifulSoup |
 | Infrastructure | Docker Compose, nginx, purplei2p/i2pd |
 
@@ -154,6 +154,14 @@ Site type detection order:
 
 ---
 
+## SAM Tunnel Service
+
+- Python 3.11 service at `prism/i2pd/abyssal-tunnel/tunnel.py` connecting to i2pd SAM on port 7656
+- Creates streaming sessions for abyssal (port 80) and abyssal-api (port 8000) destinations
+- Uses unique session IDs (`tun_{name}_{ts}_{rand}`) to avoid `DUPLICATED_ID`
+- Computes b32 addresses: base64-decode → SHA-256 → base32-encode
+- Runs in Docker at 172.18.0.10 with `abyssal-data` volume
+
 ## Dev Commands
 
 ```sh
@@ -166,6 +174,7 @@ docker compose up --build -d abyssal-backend
 # View logs
 docker compose logs -f abyssal-backend
 docker compose logs -f prism-router
+docker compose logs -f abyssal-tunnel
 
 # Run prism backend tests
 cd prism/backend && python3 test_api.py
@@ -180,3 +189,6 @@ cd prism/backend && python3 test_api.py
 - `.env` lives in `abyssal/` and is shared by all services via `env_file: .env`.
 - nginx config at `abyssal/nginx/default.conf` — changes need `docker compose restart nginx`.
 - Volume data persists in Docker volumes `abyssal-data` and `i2pd-data`.
+- Dependencies managed via pnpm; delete stale `package-lock.json` files. Frontend package bumps need `pnpm install` regen.
+- I2PControl Token param removed from non-Authenticate calls (i2pd v2.60.0 rejects it).
+- Security fixes: python-dotenv bumped to 1.2.2 (CVE-2024-28180), esbuild via Vite 8 upgrade (GHSA-67mh-4wv8-2f99).

@@ -4,7 +4,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Build context must be ./frontend (contains client/ and shared/)
-COPY client/package.json client/pnpm-lock.yaml client/pnpm-workspace.yaml ./client/
+COPY client/package.json client/pnpm-workspace.yaml ./client/
 COPY client/ ./client/
 COPY shared/ ./shared/
 

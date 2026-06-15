@@ -267,50 +267,37 @@ export default function Home() {
                   </div>
                 </CardContent>
               </Card>
-              <div className="mt-6">
-                {routerDetails.data && (
-                  <ServicesCard services={routerDetails.data.services} error={routerDetails.error} />
-                )}
-              </div>
+
             </div>
 
-            <div className="space-y-6">
-              <div>
-                <div className="mb-4">
-                  <h2 className="text-lg font-semibold">Info</h2>
-                  <p className="text-sm text-muted-foreground">Router details</p>
-                </div>
-                {routerInfo.data ? (
+            <div>
+              <div className="mb-4">
+                <h2 className="text-lg font-semibold">Info</h2>
+                <p className="text-sm text-muted-foreground">Router details</p>
+              </div>
+              {routerDetails.data ? (
+                <div className="grid gap-6 sm:grid-cols-2">
                   <RouterInfo
-                    version={routerInfo.data.version}
-                    identity={routerInfo.data.identity}
-                    uptime={routerInfo.data.uptime}
-                    net_id={routerInfo.data.net_id}
+                    version={routerInfo.data?.version ?? ""}
+                    identity={routerInfo.data?.identity ?? ""}
+                    uptime={routerInfo.data?.uptime ?? 0}
+                    net_id={routerInfo.data?.net_id ?? 2}
                     loading={routerInfo.loading}
                     error={routerInfo.error}
                   />
-                ) : (
-                  <div className="rounded-lg border border-dashed border-muted-foreground/25 py-12 text-center">
-                    <p className="text-sm text-muted-foreground">Loading router info...</p>
-                  </div>
-                )}
-              </div>
-
-              {routerHealth.data && (
-                <RouterHealthCard
-                  score={routerHealth.data.health_score}
-                  status={routerHealth.data.status}
-                  active_peers={routerHealth.data.active_peers}
-                  tunnels={routerHealth.data.tunnels}
-                  bandwidth={routerHealth.data.bandwidth}
-                  network={routerHealth.data.network}
-                  flags={routerHealth.data.flags}
-                  loading={routerHealth.loading}
-                  error={routerHealth.error}
-                />
-              )}
-              {routerDetails.data && (
-                <>
+                  {routerHealth.data && (
+                    <RouterHealthCard
+                      score={routerHealth.data.health_score}
+                      status={routerHealth.data.status}
+                      active_peers={routerHealth.data.active_peers}
+                      tunnels={routerHealth.data.tunnels}
+                      bandwidth={routerHealth.data.bandwidth}
+                      network={routerHealth.data.network}
+                      flags={routerHealth.data.flags}
+                      loading={routerHealth.loading}
+                      error={routerHealth.error}
+                    />
+                  )}
                   <ContributionCard
                     transit={routerDetails.data.transit}
                     received={routerDetails.data.received}
@@ -341,6 +328,24 @@ export default function Home() {
                     loading={routerDetails.loading}
                     error={routerDetails.error}
                   />
+                  <ServicesCard services={routerDetails.data.services} error={routerDetails.error} />
+                </div>
+              ) : (
+                <>
+                  {routerInfo.data ? (
+                    <RouterInfo
+                      version={routerInfo.data.version}
+                      identity={routerInfo.data.identity}
+                      uptime={routerInfo.data.uptime}
+                      net_id={routerInfo.data.net_id}
+                      loading={routerInfo.loading}
+                      error={routerInfo.error}
+                    />
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-muted-foreground/25 py-12 text-center">
+                      <p className="text-sm text-muted-foreground">Loading router info...</p>
+                    </div>
+                  )}
                 </>
               )}
             </div>
