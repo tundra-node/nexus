@@ -19,27 +19,6 @@ services:
       - ./backend/services/router/common:/app/common
     command: uvicorn main:app --host 0.0.0.0 --port 8002 --reload
 
-  api-crawler:
-    build:
-      context: ./backend
-      dockerfile: services/crawler/Dockerfile
-    volumes:
-      - ./backend/services/crawler/main.py:/app/main.py
-      - ./backend/services/crawler/crawler:/app/crawler
-      - ./backend/services/router/common:/app/common
-      - ./backend/services/wayback/wayback:/app/wayback
-    command: uvicorn main:app --host 0.0.0.0 --port 8003 --reload
-
-  api-wayback:
-    build:
-      context: ./backend
-      dockerfile: services/wayback/Dockerfile
-    volumes:
-      - ./backend/services/wayback/main.py:/app/main.py
-      - ./backend/services/wayback/wayback:/app/wayback
-      - ./backend/services/router/common:/app/common
-    command: uvicorn main:app --host 0.0.0.0 --port 8004 --reload
-
   api-addressbook:
     build:
       context: ./backend
