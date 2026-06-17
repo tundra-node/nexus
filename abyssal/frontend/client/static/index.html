@@ -3,18 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Abyssal — I2P Search</title>
+<title>Abyssal — I2P Search Engine</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <nav id="nav">
-    <a href="/" class="logo">Abyssal</a>
-    <a href="/browse" data-nav="browse">Directory</a>
-    <a href="/wayback" data-nav="wayback">Wayback</a>
-    <a href="/addressbook" data-nav="addressbook">Address Book</a>
+    <a href="/" class="logo">
+      <span class="logo-icon">◉</span>
+      <span class="logo-text">Abyssal</span>
+    </a>
+    <div class="nav-links">
+      <a href="/browse" data-nav="browse">Directory</a>
+      <a href="/wayback" data-nav="wayback">Wayback</a>
+      <a href="/addressbook" data-nav="addressbook">Address Book</a>
+    </div>
     <div id="conn-status" class="conn-indicator" title="Connection status"></div>
   </nav>
   <main id="main"></main>
+  <footer id="footer">
+    <span>Abyssal v0.1.0</span>
+    <span class="sep">·</span>
+    <span>I2P Search Engine</span>
+    <span class="sep">·</span>
+    <span id="footer-stats"></span>
+  </footer>
   <script src="app.js"></script>
 </body>
 </html>
