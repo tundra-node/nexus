@@ -168,6 +168,9 @@ export default function SearchPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      <Link to={`/wayback?url=${encodeURIComponent(r.url)}`} className="text-gray-600 hover:text-cyan-400 text-xs" title="Cached version">
+                        Cached
+                      </Link>
                       <button onClick={() => toggleBookmark(r.url)} className="text-gray-600 hover:text-yellow-400 text-xs" title="Bookmark">
                         {bookmarks.includes(r.url) ? '★' : '☆'}
                       </button>

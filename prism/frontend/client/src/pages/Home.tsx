@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useI2pdStatus, useI2pdBandwidth, useI2pdTunnels, useI2pdRouterInfo, useI2pdRouterDetails, useTransports, useLocalDestinations, useI2pdRouterHealth, setBandwidth } from "@/hooks/useI2pdApi";
+import { useI2pdStatus, useI2pdBandwidth, useI2pdTunnels, useI2pdRouterInfo, useI2pdRouterDetails, useTransports, useLocalDestinations, useI2pdRouterHealth, setBandwidth, useEepsite } from "@/hooks/useI2pdApi";
 import StatusCard from "@/components/StatusCard";
 import BandwidthCard from "@/components/BandwidthCard";
 import TunnelManager from "@/components/TunnelManager";
@@ -10,13 +10,33 @@ import RouterHealthCard from "@/components/RouterHealthCard";
 import TransportsCard from "@/components/TransportsCard";
 import LocalDestinationsCard from "@/components/LocalDestinationsCard";
 import ServicesCard from "@/components/ServicesCard";
+import EepsiteCard from "@/components/EepsiteCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import SettingsSheet from "@/components/SettingsSheet";
 import { RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { toast } from "sonner";
+
+const BW_LETTERS: { letter: string; kbps: number; label: string }[] = [
+  { letter: "K", kbps: 16, label: "Minimal" },
+  { letter: "L", kbps: 32, label: "Low" },
+  { letter: "M", kbps: 64, label: "Medium" },
+  { letter: "N", kbps: 128, label: "Normal" },
+  { letter: "O", kbps: 256, label: "High" },
+  { letter: "P", kbps: 512, label: "Paranoid" },
+  { letter: "X", kbps: 1024, label: "Extreme" },
+];
+
+function kbpsToLetter(kbps: number): string {
+  const entry = BW_LETTERS.reduce((prev, curr) =>
+    Math.abs(curr.kbps - kbps) < Math.abs(prev.kbps - kbps) ? curr : prev
+  );
+  return entry.letter;
+}
+
+function letterToKbps(letter: string): number {
+  return BW_LETTERS.find(l => l.letter === letter)?.kbps ?? 64;
+}
 
 /**
  * Prism Dashboard
@@ -40,31 +60,32 @@ export default function Home() {
   const transports = useTransports();
   const localDests = useLocalDestinations();
   const routerHealth = useI2pdRouterHealth(POLL_INTERVAL);
+  const eepsite = useEepsite();
 
-  const [bwIn, setBwIn] = useState(64);
-  const [bwOut, setBwOut] = useState(64);
+  const [bwLetter, setBwLetter] = useState(() => localStorage.getItem("bwLetter") || "M");
   const [autoBw, setAutoBw] = useState(() => localStorage.getItem("autoBw") === "true");
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const applyBandwidth = useCallback(async (inbound: number, outbound: number) => {
+  const applyBandwidth = useCallback(async (letter: string) => {
+    const kbps = letterToKbps(letter);
     try {
-      await setBandwidth(inbound, outbound);
+      await setBandwidth(kbps, kbps);
     } catch {
       toast.error("Failed to set bandwidth");
     }
   }, []);
 
-  const getWifiBandwidth = useCallback(() => {
-    if (typeof navigator === "undefined" || !("connection" in navigator)) return null;
+  const getWifiBandwidthLetter = useCallback((): string => {
+    if (typeof navigator === "undefined" || !("connection" in navigator)) return "M";
     const conn = (navigator as any).connection;
-    if (!conn) return null;
-    const map: Record<string, [number, number]> = {
-      "slow-2g": [16, 16],
-      "2g": [48, 48],
-      "3g": [192, 192],
-      "4g": [512, 512],
+    if (!conn) return "M";
+    const map: Record<string, string> = {
+      "slow-2g": "K",
+      "2g": "L",
+      "3g": "N",
+      "4g": "P",
     };
-    return map[conn.effectiveType] || null;
+    return map[conn.effectiveType] || "M";
   }, []);
 
   const handleAutoToggle = useCallback(async () => {
@@ -72,39 +93,33 @@ export default function Home() {
     setAutoBw(next);
     localStorage.setItem("autoBw", String(next));
     if (next) {
-      const bw = getWifiBandwidth();
-      if (bw) {
-        setBwIn(bw[0]);
-        setBwOut(bw[1]);
-        await applyBandwidth(bw[0], bw[1]);
-      }
+      const letter = getWifiBandwidthLetter();
+      setBwLetter(letter);
+      localStorage.setItem("bwLetter", letter);
+      await applyBandwidth(letter);
     }
-  }, [autoBw, getWifiBandwidth, applyBandwidth]);
+  }, [autoBw, getWifiBandwidthLetter, applyBandwidth]);
 
   useEffect(() => {
     if (!autoBw) return;
     const conn = typeof navigator !== "undefined" ? (navigator as any).connection : null;
     if (!conn) return;
     const handler = () => {
-      const bw = getWifiBandwidth();
-      if (bw) {
-        setBwIn(bw[0]);
-        setBwOut(bw[1]);
-        applyBandwidth(bw[0], bw[1]);
-      }
+      const letter = getWifiBandwidthLetter();
+      setBwLetter(letter);
+      localStorage.setItem("bwLetter", letter);
+      applyBandwidth(letter);
     };
     conn.addEventListener("change", handler);
     return () => conn.removeEventListener("change", handler);
-  }, [autoBw, getWifiBandwidth, applyBandwidth]);
+  }, [autoBw, getWifiBandwidthLetter, applyBandwidth]);
 
   // Apply auto on mount if enabled
   useEffect(() => {
     if (autoBw) {
-      const bw = getWifiBandwidth();
-      if (bw) {
-        setBwIn(bw[0]);
-        setBwOut(bw[1]);
-      }
+      const letter = getWifiBandwidthLetter();
+      setBwLetter(letter);
+      localStorage.setItem("bwLetter", letter);
     }
   }, []); // intentional: only on mount
 
@@ -118,6 +133,7 @@ export default function Home() {
         routerInfo.refetch(),
         routerDetails.refetch(),
         routerHealth.refetch(),
+        eepsite.refetch(),
       ]);
       toast.success("Data refreshed successfully");
     } catch (err) {
@@ -215,7 +231,7 @@ export default function Home() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center justify-between text-sm">
-                    <span>Bandwidth Limits (KB/s)</span>
+                    <span>Bandwidth Limits</span>
                     <Button
                       variant={autoBw ? "default" : "outline"}
                       size="sm"
@@ -228,44 +244,32 @@ export default function Home() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <Label className="w-16 text-[10px] text-muted-foreground">In</Label>
-                    <Input
-                      type="number"
-                      value={bwIn}
-                      min={4}
-                      max={9999}
-                      disabled={autoBw}
-                      onChange={(e) => {
-                        const v = parseInt(e.target.value) || 4;
-                        setBwIn(v);
-                      }}
-                      className="h-7 text-xs"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-[10px]"
-                      disabled={autoBw}
-                      onClick={() => applyBandwidth(bwIn, bwOut)}
-                    >
-                      Apply
-                    </Button>
+                  <div className="flex flex-wrap gap-1.5 justify-center">
+                    {BW_LETTERS.map(({ letter, kbps, label }) => (
+                      <button
+                        key={letter}
+                        disabled={autoBw}
+                        onClick={() => {
+                          setBwLetter(letter);
+                          localStorage.setItem("bwLetter", letter);
+                          applyBandwidth(letter);
+                        }}
+                        className={`flex flex-col items-center rounded-lg border px-2.5 py-1.5 text-[10px] transition-colors min-w-[44px] ${
+                          bwLetter === letter && !autoBw
+                            ? "border-primary bg-primary/10 text-primary font-semibold"
+                            : autoBw
+                              ? "border-muted text-muted-foreground cursor-not-allowed opacity-50"
+                              : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                        }`}
+                        title={`${label} — ${kbps} KB/s`}
+                      >
+                        <span className="text-sm font-bold">{letter}</span>
+                        <span className="text-[8px]">{kbps}</span>
+                      </button>
+                    ))}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Label className="w-16 text-[10px] text-muted-foreground">Out</Label>
-                    <Input
-                      type="number"
-                      value={bwOut}
-                      min={4}
-                      max={9999}
-                      disabled={autoBw}
-                      onChange={(e) => {
-                        const v = parseInt(e.target.value) || 4;
-                        setBwOut(v);
-                      }}
-                      className="h-7 text-xs"
-                    />
+                  <div className="text-center text-[10px] text-muted-foreground">
+                    Current: <span className="font-semibold text-foreground">{bwLetter}</span> ({letterToKbps(bwLetter)} KB/s)
                   </div>
                 </CardContent>
               </Card>
@@ -315,6 +319,9 @@ export default function Home() {
                 )}
                 {localDests.data.length > 0 && (
                   <LocalDestinationsCard destinations={localDests.data} />
+                )}
+                {eepsite.tunnels.length > 0 && (
+                  <EepsiteCard tunnels={eepsite.tunnels} />
                 )}
                 <RouterIdentityCard
                   identity={routerDetails.data.identity}

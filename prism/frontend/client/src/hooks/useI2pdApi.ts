@@ -377,6 +377,41 @@ export function useLocalDestinations() {
 }
 
 // ---------------------------------------------------------------------------
+// Eepsite (Abyssal SAM tunnel destinations)
+// ---------------------------------------------------------------------------
+
+export interface EepsiteTunnel {
+  name: string;
+  b32: string;
+  b32_address: string;
+  host: string;
+  port: number;
+}
+
+export function useEepsite() {
+  const [tunnels, setTunnels] = useState<EepsiteTunnel[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = async () => {
+    try {
+      const r = await apiClient.get<{ tunnels: EepsiteTunnel[] }>("/api/abyssal/eepsite");
+      setTunnels(r.data.tunnels);
+    } catch {
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetch();
+    const iv = setInterval(fetch, 30000);
+    return () => clearInterval(iv);
+  }, []);
+
+  return { tunnels, loading, refetch: fetch };
+}
+
+// ---------------------------------------------------------------------------
 // Browser (proxy + bookmarks)
 // ---------------------------------------------------------------------------
 

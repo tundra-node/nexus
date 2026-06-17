@@ -1,10 +1,10 @@
 # Prism — Session Context
 
-You are working on **Prism**, a Docker-based web dashboard for monitoring, browsing, and managing an i2pd router. Codebase at `/Users/elias/Developer/prism`.
+You are working on **Prism**, a Docker-based web dashboard for monitoring, browsing, and managing an i2pd router. Codebase at `C:\Users\Zeine\Developer\nexus\prism` (monorepo: `nexus/`).
 
 ## Stack
-- **Frontend**: React 19 + TypeScript + Vite 6 + Tailwind CSS 4 (shadcn/ui, wouter routing)
-- **Backend**: 6 Python 3.11 FastAPI microservices
+- **Frontend**: React 19 + TypeScript + Vite 8 + Tailwind CSS 4 (shadcn/ui, wouter routing)
+- **Backend**: 3 Python 3.11 FastAPI microservices (router, browser, addressbook — crawler/wayback moved to Abyssal)
 - **Infrastructure**: Docker Compose, nginx reverse proxy, purplei2p/i2pd container
 
 ## Quick Start
@@ -31,16 +31,19 @@ All `/api/*` routes require `x-api-key` header. Dev key: `"dev-key-12345"`. Some
 - API calls in `useI2pdApi.ts`
 - Polling hooks: `useI2pdRouterHealth()` (5s)
 
-## CapsCard (Bandwidth Capabilities)
-- Component at `frontend/client/src/components/CapsCard.tsx`
-- Parses the raw caps string (e.g. `PU`, `FfRX`) to detect the current I2P bandwidth level flag (K/L/M/N/O/P/X)
-- Shows a 7-position step slider mapped to I2P bandwidth classes:
-  - K=12, L=32, M=64, N=128, O=256, P=2048, X=unlimited
-- Each flag label has a tooltip explaining its bandwidth range
-- Also displays reachability status (R=reachable, U=unreachable/firewalled) from the caps string
-- Uses existing `POST /api/bandwidth/set` endpoint — no backend changes needed
-- Replaced the old dual In/Out KB/s number inputs in `Home.tsx`
-- Auto bandwidth toggle retained (connection-aware via `navigator.connection`)
+## Bandwidth Letter Presets
+- Inline in `Home.tsx` (no separate component needed)
+- Replaced old dual In/Out KB/s number inputs with letter preset buttons: K(16), L(32), M(64), N(128), O(256), P(512), X(1024)
+- Auto mode maps connection type: slow-2g→K, 2g→L, 3g→N, 4g→P
+- Uses `POST /api/bandwidth/set` endpoint with symmetric in/out KB/s values
+- Current letter persisted to `localStorage("bwLetter")`
+
+## Eepsite Card
+- Component at `frontend/client/src/components/EepsiteCard.tsx`
+- Displays Abyssal SAM tunnel b32 addresses on the dashboard (in the Router Info grid)
+- Fetches from `GET /api/abyssal/eepsite` (public endpoint, no auth needed)
+- Each tunnel shows name, collapsible b32 address, and host:port
+- Auto-polls every 30s
 
 ## SAM Tunnel Service (`prism/i2pd/abyssal-tunnel/`)
 - Python 3.11 service connecting to i2pd SAM on port 7656
@@ -52,10 +55,12 @@ All `/api/*` routes require `x-api-key` header. Dev key: `"dev-key-12345"`. Some
 - Handlers open SAM STREAM ACCEPT, then bidirectionally proxy between SAM and backends
 - b32 computation: `base64_decode(destination) → SHA-256 → base32_encode → .b32.i2p`
 - Key files persist at `/data/tunnel-keys/` (Docker volume `abyssal-data`)
+- Writes `/data/tunnel-info.json` with name, b32, host, port for each tunnel (shared with abyssal-backend)
+- Periodic info file rewrite every 30s in background thread
 
 ## Known Issues
-- **i2pd v2.60.0 LeaseSet publishing**: "Publish confirmation was not received" repeats indefinitely despite tunnels being built and SAM sessions OK — floodfill nodes don't respond. Same issue with both server tunnels and SAM sessions.
-- **I2PControl spam**: "RouterInfo unknown request Token" 3x/sec from prism-router polling
+- **i2pd v2.60.0 LeaseSet publishing**: "Publish confirmation was not received" warns repeat for HTTP/SOCKS client proxy destinations (outbound-only, expected behavior). SAM eepsite destinations use a separate code path and publish correctly via `SESSION CREATE`.
+- **I2PControl Token**: `Token` param **required** in all JSON-RPC calls after `Authenticate` (i2pd v2.60.0). Fixed in `prism/backend/services/router/main.py`.
 
 ## Dev Commands
 ```sh

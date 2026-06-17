@@ -143,9 +143,13 @@ async def upsert_tracked_url(url: str, title: str = "",
             (url, title, schedule_interval, title, schedule_interval),
         )
     else:
+        # Use a real UPSERT so we handle the case where the row doesn't exist yet
         await db.execute(
-            """UPDATE wayback_urls SET title = COALESCE(NULLIF(?, ''), title) WHERE url = ?""",
-            (title, url),
+            """INSERT INTO wayback_urls (url, title, last_captured, capture_count)
+               VALUES (?, ?, datetime('now'), 0)
+               ON CONFLICT(url) DO UPDATE SET
+                   title = COALESCE(NULLIF(?, ''), title)""",
+            (url, title, title),
         )
     await db.commit()
     await db.close()

@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { getSites, getFacets, type Site, type Facets } from '../hooks/useAbyssalApi'
-import { Globe, Loader2 } from 'lucide-react'
+import { Globe, Loader2, Check, X, HelpCircle } from 'lucide-react'
+
+function siteStatus(site: Site): 'online' | 'limited' | 'offline' {
+  if (site.checks_online > 0 && site.checks_online >= site.checks_offline && site.checks_online >= site.checks_limited) return 'online'
+  if (site.checks_limited > 0 && site.checks_limited >= site.checks_offline) return 'limited'
+  return 'offline'
+}
 
 export default function DirectoryPage() {
   const [sites, setSites] = useState<Site[]>([])
@@ -24,6 +30,9 @@ export default function DirectoryPage() {
     }).catch(() => {}).finally(() => setLoading(false))
   }, [langFilter, typeFilter, page])
 
+  const counts = { online: 0, limited: 0, offline: 0 }
+  for (const s of sites) { counts[siteStatus(s)]++ }
+
   return (
     <div className="p-4 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold text-cyan-400 mb-4">Site Directory</h1>
@@ -41,6 +50,11 @@ export default function DirectoryPage() {
           {facets?.site_types.map(f => <option key={f.site_type} value={f.site_type}>{f.site_type} ({f.count})</option>)}
         </select>
         <span className="text-sm text-gray-500">{total} sites</span>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="flex items-center gap-1"><Check className="w-3 h-3 text-green-500" />{counts.online}</span>
+          <span className="flex items-center gap-1"><HelpCircle className="w-3 h-3 text-yellow-500" />{counts.limited}</span>
+          <span className="flex items-center gap-1"><X className="w-3 h-3 text-red-500" />{counts.offline}</span>
+        </div>
       </div>
 
       {loading ? (
@@ -56,7 +70,13 @@ export default function DirectoryPage() {
             <Link key={site.hostname} to={`/site/${site.hostname}`}
               className="border border-gray-800 rounded-lg p-3 hover:border-gray-700 hover:bg-gray-900/50">
               <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full shrink-0 ${site.checks_online > site.checks_offline ? 'bg-green-500' : 'bg-red-500'}`} />
+                {siteStatus(site) === 'online' ? (
+                  <Check className="w-3 h-3 text-green-500 shrink-0" />
+                ) : siteStatus(site) === 'limited' ? (
+                  <HelpCircle className="w-3 h-3 text-yellow-500 shrink-0" />
+                ) : (
+                  <X className="w-3 h-3 text-red-500 shrink-0" />
+                )}
                 <span className="font-medium text-sm truncate">{site.title || site.hostname}</span>
               </div>
               <p className="text-xs text-gray-500 truncate mt-1">{site.hostname}</p>

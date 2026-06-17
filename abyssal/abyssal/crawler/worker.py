@@ -47,17 +47,29 @@ async def _process_url(
 
     fetch_result = await fetcher.fetch(url, client)
     if not fetch_result.success:
-        if fetch_result.retryable:
-            await db.enqueue_urls(job_id, [(url, depth)])
-            logger.info("Re-enqueued %s for retry (%s)", url, fetch_result.error)
+        # PageFetcher already applied up to MAX_RETRIES internally with exponential
+        # backoff.  Do NOT re-enqueue here — a permanently-down host would bounce
+        # in the queue forever, keeping the job alive indefinitely and preventing
+        # it from ever reaching completed/failed status.
+        # The auto-recrawl scheduler will retry the whole site in 24 h.
+        status = fetch_result.status_code or 0
+        error_str = fetch_result.error or f"HTTP {status}"
+        logger.warning("Skipping %s after all retries (%s)", url, error_str)
+        if status >= 400:
+            await db.upsert_site_status(hostname, limited=True, status_code=status)
+            await db.save_failed_page(job_id, url, status, depth, error_str)
+            if status == 429:
+                logger.info("  → rate-limited: pages_limited += 1")
+            else:
+                logger.info("  → client error %d: pages_failed += 1", status)
         else:
-            logger.warning("Skipping %s (%s)", url, fetch_result.error)
-        await db.upsert_site_status(hostname, online=False)
+            await db.upsert_site_status(hostname, online=False)
+            await db.save_failed_page(job_id, url, 0, depth, error_str)
+            logger.info("  → connection error: pages_failed += 1")
         return
 
     resp = fetch_result.response
     content_type = resp.headers.get("content-type", "")
-    online = resp.status_code < 400
 
     title = ""
     links: list[str] = []
@@ -74,10 +86,9 @@ async def _process_url(
     if hostname.endswith(".i2p") and ":" not in hostname:
         b32, address_helper = await _resolve_hostname(hostname)
 
-    canonical = ""
     if "text/html" in content_type:
         soup = BeautifulSoup(resp.text, "html.parser")
-        canonical = extract_canonical(soup, url)
+        extract_canonical(soup, url)
         extra_meta = extract_meta(soup)
         meta["description"] = meta.get("description") or extra_meta.get("description", "")
         meta["keywords"] = meta.get("keywords") or extra_meta.get("keywords", "")
@@ -94,28 +105,38 @@ async def _process_url(
         **{k: v for k, v in meta.items() if k in ("language", "site_type", "description", "keywords")},
     )
 
-    await db.upsert_site_status(hostname, online=True, b32=b32, address_helper=address_helper)
+    await db.upsert_site_status(
+        hostname, online=True, b32=b32, address_helper=address_helper,
+        status_code=resp.status_code,
+    )
     await db.inc_job_pages(job_id)
 
-    # Wayback snapshot (HTML only)
+    # --- Wayback snapshot (HTML only) ---
     if "text/html" in content_type and resp.text:
         try:
             snap_meta = wb_storage.store_snapshot(
-                url=url, content=resp.text,
-                status_code=resp.status_code, content_type=content_type,
+                url=url,
+                content=resp.text,
+                status_code=resp.status_code,
+                content_type=content_type,
             )
             await wb_db.add_snapshot(
-                url=url, snapshot_time=snap_meta["snapshot_time"],
-                title=title, status_code=resp.status_code,
-                content_type=content_type, file_path=snap_meta["file_path"],
-                size_bytes=snap_meta["size_bytes"], job_id=job_id,
+                url=url,
+                snapshot_time=snap_meta["snapshot_time"],
+                title=title,
+                status_code=resp.status_code,
+                content_type=content_type,
+                file_path=snap_meta["file_path"],
+                size_bytes=snap_meta["size_bytes"],
+                job_id=job_id,
             )
             if title:
                 await wb_db.upsert_tracked_url(url, title=title)
+            logger.debug("Wayback snapshot stored for %s", url)
         except Exception as wb_err:
-            logger.debug("Wayback snapshot skipped for %s: %s", url, wb_err)
+            logger.warning("Wayback snapshot failed for %s: %s", url, wb_err)
 
-    # Process links
+    # --- Enqueue outbound links ---
     same_host_links: list[tuple[str, int]] = []
     seen_new_hosts: set[str] = set()
     for link in links:
@@ -208,14 +229,26 @@ async def crawl_job(job_id: int):
                 pending.add(task)
                 task.add_done_callback(pending.discard)
 
-            # Wait for remaining tasks BEFORE client closes
+            # Wait for remaining tasks BEFORE the httpx client closes
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
 
         current = await db.get_job(job_id)
         if current and current["status"] != "paused":
-            await db.update_job(job_id, status="completed",
-                                finished_at=datetime.now(timezone.utc).isoformat())
+            pages = await db.get_job_pages_crawled(job_id)
+            if pages == 0:
+                # Ran but crawled nothing (all fetches failed) — mark as failed
+                await db.update_job(
+                    job_id, status="failed",
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                )
+                logger.warning("Job %d finished with 0 pages crawled — marked as failed", job_id)
+            else:
+                await db.update_job(
+                    job_id, status="completed",
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                )
+                logger.info("Job %d completed: %d pages crawled", job_id, pages)
 
     except Exception as e:
         logger.error("Crawl job %d failed: %s", job_id, e, exc_info=True)

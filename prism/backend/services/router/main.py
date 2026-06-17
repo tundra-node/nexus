@@ -158,11 +158,15 @@ class I2PControlSession:
         if not self.token:
             await self.authenticate()
 
+        params = {**fields}
+        if self.token:
+            params["Token"] = self.token
+
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": method,
-            "params": fields,
+            "params": params,
         }
 
         response = await client.post(

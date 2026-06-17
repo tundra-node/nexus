@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from typing import Optional
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel
@@ -101,14 +100,33 @@ class StartCrawlRequest(BaseModel):
     delay_seconds: float = 2.0
 
 
+def _normalize_seed_url(raw: str) -> str:
+    """Ensure the seed URL has http:// and a .i2p hostname."""
+    u = raw.strip()
+    if not u:
+        return u
+    # Strip any existing protocol so we can re-add it cleanly
+    stripped = u
+    if stripped.lower().startswith("http://"):
+        stripped = stripped[7:]
+    elif stripped.lower().startswith("https://"):
+        stripped = stripped[8:]
+    # Separate host from path
+    slash = stripped.find("/")
+    host = stripped if slash == -1 else stripped[:slash]
+    rest = "" if slash == -1 else stripped[slash:]
+    # Append .i2p if the host doesn't already end with it
+    if host and not host.lower().endswith(".i2p"):
+        host = host + ".i2p"
+    return f"http://{host}{rest}"
+
+
 @router.post("/crawl/start")
 async def start_crawl(req: StartCrawlRequest, api_key: str = Header("")):
     await require_admin(api_key)
     if not req.url:
         raise HTTPException(status_code=400, detail="url is required")
-    parsed = urlparse(req.url)
-    if not parsed.scheme:
-        req.url = "http://" + req.url
+    req.url = _normalize_seed_url(req.url)
     job_id = await crawler_db.create_job(
         req.url, req.max_pages, req.max_depth, req.concurrency, req.delay_seconds,
     )
@@ -189,9 +207,21 @@ async def wayback_snapshots(
 ):
     if not url:
         return {"snapshots": [], "total": 0}
-    snapshots = await wb_db.get_snapshots_for_url(url, limit, offset)
-    total = await wb_db.count_snapshots_for_url(url)
-    return {"snapshots": snapshots, "total": total}
+    # Normalize the URL like the crawler does so "notbob" finds "http://notbob.i2p/"
+    candidates = [url, _normalize_seed_url(url)]
+    # Also try with and without trailing slash
+    candidates += [c.rstrip("/") for c in candidates]
+    candidates += [c + "/" for c in candidates]
+    seen = set()
+    for c in candidates:
+        if c in seen:
+            continue
+        seen.add(c)
+        snapshots = await wb_db.get_snapshots_for_url(c, limit, offset)
+        if snapshots:
+            total = await wb_db.count_snapshots_for_url(c)
+            return {"snapshots": snapshots, "total": total}
+    return {"snapshots": [], "total": 0}
 
 
 @router.get("/wayback/snapshots/{snapshot_id}")
@@ -261,3 +291,62 @@ async def view_page(page_id: int, raw: bool = Query(False)):
         return {"content": page["content"], "url": page["url"]}
     rewritten = rewrite_external_urls(page["content"], page["url"])
     return {"content": rewritten, "url": page["url"]}
+
+@router.get("/eepsite")
+async def eepsite():
+    """
+    Public — returns info about the Abyssal eepsite tunnels (b32 addresses).
+    These are created by the SAM tunnel service and persisted in a shared volume.
+    """
+    import json, os
+    info_path = "/data/tunnel-info.json"
+    if os.path.exists(info_path):
+        try:
+            with open(info_path) as f:
+                data = json.load(f)
+            return {"tunnels": data}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to read tunnel info: {e}")
+    return {"tunnels": []}
+
+
+@router.get("/addressbook")
+async def get_addressbook(
+    q:        str = Query("",  description="Filter by hostname or b32"),
+    page:     int = Query(1,   ge=1),
+    per_page: int = Query(100, ge=1, le=1000),
+):
+    """
+    Public addressbook — all known .i2p hostnames and their b32 addresses.
+    No API key required; intentionally open so external tools can subscribe.
+    """
+    return await crawler_db.get_addressbook(q=q, page=page, per_page=per_page)
+
+
+async def _render_hosts_txt(active_only: bool = False) -> str:
+    """Render hosts.txt format: hostname=b32.i2p lines."""
+    data = await crawler_db.get_addressbook(per_page=10000)
+    lines: list[str] = []
+    for site in data["sites"]:
+        if active_only and not site.get("likely_online"):
+            continue
+        b32 = site.get("b32", "")
+        if b32:
+            b32_addr = b32 if b32.endswith(".b32.i2p") else f"{b32}.b32.i2p"
+            lines.append(f"{site['hostname']}={b32_addr}")
+    return "\n".join(lines)
+
+
+@router.get("/addressbook/hosts.txt")
+async def hosts_txt(
+    filter: str = Query("all", regex="^(all|active)$"),
+):
+    """
+    Public hosts.txt export.
+    - ?filter=all    → every known hostname (default)
+    - ?filter=active → only hosts that were recently online and okay
+    """
+    content = await _render_hosts_txt(active_only=(filter == "active"))
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(content, media_type="text/plain")
+

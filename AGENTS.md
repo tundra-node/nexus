@@ -24,7 +24,7 @@ Dev key (both projects): `dev-key-12345`
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 19 + TypeScript 6 + Vite 8 + Tailwind CSS 4 + shadcn/ui + wouter |
+| Frontend | Vanilla HTML/CSS/JS (minimal, no framework — fast for I2P) |
 | Backend | Python 3.11 FastAPI + httpx + aiosqlite + BeautifulSoup |
 | Infrastructure | Docker Compose, nginx, purplei2p/i2pd |
 
@@ -72,6 +72,7 @@ Dev key (both projects): `dev-key-12345`
 
 - **Concurrency**: 1–20 workers via `asyncio.Semaphore` (configurable per job)
 - **Delay**: 0–60s per-worker delay after each request, applied **outside** the semaphore
+- **URL normalization at start**: the `/crawl/start` endpoint and the Admin UI both normalize seed URLs — bare hostnames get `http://` prepended and `.i2p` appended (e.g. `identiguy` → `http://identiguy.i2p`). The frontend shows a live preview when the input differs from the normalized form.
 - **URL normalization**: canonical URLs (lowercase, strip fragments, remove default ports, collapse `//`/`./`/`../`, sort query params)
 - **Retry logic**: 3 attempts with exponential backoff (1s → 2s → 4s) for 5xx, 429, timeouts, connection errors
 - **Robots.txt**: fetched per-domain, 24h cache, respects `Disallow` and `Crawl-delay`
@@ -82,6 +83,7 @@ Dev key (both projects): `dev-key-12345`
 - **Site type detection**: 18 types — generator patterns, URL paths, content keywords, OG types, nav analysis
 - **Auto-recrawl scheduler**: 24h loop, unlimited crawl jobs for previously-seen hostnames
 - **Auto-spawn**: discovering new `.i2p` hosts on a crawled page auto-creates new crawl jobs
+- **Registry address book crawler**: fetches hosts.txt from known registries (reg.i2p, notbob.i2p, stats.i2p, inr.i2p, i2pd.i2p) and adds entries to site_status; runs every 6 hours; auto-discovers new registry sources (e.g. bigrat.i2p, /export/alive-hosts.txt)
 - **Wayback integration**: every crawled HTML page creates a Wayback snapshot
 
 ### Wayback Machine
@@ -95,7 +97,7 @@ Dev key (both projects): `dev-key-12345`
 ### Crawler DB (`abyssal/abyssal/crawler/db.py`)
 
 - SQLite with WAL mode for concurrent access
-- Tables: `crawl_jobs`, `crawled_pages`, `crawl_queue`, `site_status`, `site_links`
+- Tables: `crawl_jobs`, `crawled_pages`, `crawl_queue`, `site_status`, `site_links`, `registry_sources`
 - FTS5 virtual table `pages_fts` with porter+unicode61 tokenizer
 - Fields indexed: title, content, description, keywords
 
@@ -146,6 +148,16 @@ Site type detection order:
 | `POST /api/addressbook/subscribe` | Addressbook | Add subscription |
 | `POST /api/addressbook/unsubscribe` | Addressbook | Remove subscription |
 
+### Frontend
+
+- **Stack**: Minimal vanilla HTML/CSS/JS served through nginx
+- **Routing**: Path-based (direct nginx `try_files $uri /index.html` fallback)
+- **Pages**: Search (`/`), Directory (`/browse`), Site Detail (`/site/{hostname}`), Wayback (`/wayback`), Address Book (`/addressbook`)
+- **API calls**: `window.fetch()` with helper `api()` function
+- **Single file app**: `index.html` + `style.css` + `app.js` under `frontend/client/static/`
+- **Build**: Docker copies `static/` dir into nginx image (no Node.js needed)
+- **Key features**: Search with language/site_type filters, pagination, folder tree view, status badges, hosts.txt export display
+
 ### Frontend pages
 
 - `/` — Dashboard: health gauge, status, bandwidth, tunnel manager, router info
@@ -183,19 +195,27 @@ cd prism/backend && python3 test_api.py
 ## Conventions
 
 - After completing a task, update docs before concluding: `AGENTS.md` (this file) for cross-project context, `prism/AGENTS.md` or `prism/SESSION_PROMPT.md` for Prism-specific changes.
-- Dark mode by default (Tailwind CSS v4, `oklch(0.141 0.005 285.823)` background).
-- shadcn/ui patterns: `cn()` utility, named exports from `@/components/ui/*`.
+- Dark mode by default (gradient background `#0a1628` → `#0d1117`).
 - API key header: Abyssal uses `api-key`, Prism uses `x-api-key`. Both default to `dev-key-12345`.
 - `.env` lives in `abyssal/` and is shared by all services via `env_file: .env`.
 - nginx config at `abyssal/nginx/default.conf` — changes need `docker compose restart nginx`.
 - Volume data persists in Docker volumes `abyssal-data` and `i2pd-data`.
-- Dependencies managed via pnpm; delete stale `package-lock.json` files. Frontend package bumps need `pnpm install` regen.
-- I2PControl Token param removed from non-Authenticate calls (i2pd v2.60.0 rejects it).
-- Security fixes: python-dotenv bumped to 1.2.2 (CVE-2024-28180), esbuild via Vite 8 upgrade (GHSA-67mh-4wv8-2f99).
+- Abyssal frontend is vanilla HTML/CSS/JS (no framework) — `frontend/client/static/`.
+- I2PControl: `Token` param included in **all** JSON-RPC calls after `Authenticate` (i2pd v2.60.0 requires it).
 
 ## Pre-Commit Checklist
 
 Run these checks before every commit to catch regressions early. If a check fails, fix before committing.
+
+### 0. Update ALL Documents
+
+Update **all** documents in the repo before committing:
+- `AGENTS.md` (this file) — cross-project changes
+- `prism/AGENTS.md` — Prism-specific changes
+- `prism/SESSION_PROMPT.md` — Prism session context
+- `prism/PROJECT_SUMMARY.md` — Prism architecture summary
+- `prism/FILE_MANIFEST.md` — Prism file inventory
+- Any other `.md` files affected by the change
 
 ### 1. Build
 
@@ -239,12 +259,23 @@ docker logs nexus-i2pd-1 2>&1 | grep -i "Publish confirmation was not received"
 # Expect: empty (no output = no errors)
 ```
 
+**Eepsite reachability checklist:**
+- [ ] SAM tunnel logs show `RESULT=OK` for both `abyssal` and `abyssal-api` sessions
+- [ ] Two `*.b32.i2p` addresses appear in the tunnel logs
+- [ ] Eepsite responds via I2P browser proxy (get the b32 from logs first):
+  ```sh
+  B32=$(docker logs nexus-abyssal-tunnel-1 2>&1 | grep "\.b32\.i2p" | head -1 | grep -oE '[a-z2-7]+\.b32\.i2p')
+  curl -s -H "x-api-key: dev-key-12345" "http://localhost/api/browser/proxy?url=http://${B32}"
+  # Expect: non-empty HTML from the eepsite
+  ```
+- [ ] No LeaseSet publish failures in i2pd logs
+
 ### 4. Abyssal Search Engine — API
 
 ```sh
 # Search (FTS5) — public endpoint
 curl -s http://localhost/api/abyssal/search?q=test
-# Expect: JSON with results array (may be empty if no crawled data)
+# Expect: JSON with results array, total > 0 (should have crawled data)
 
 # Facets — available languages and site types
 curl -s http://localhost/api/abyssal/facets
@@ -263,18 +294,91 @@ curl -s http://localhost/api/abyssal/wayback/stats
 # Expect: JSON with archive stats (totals, etc.)
 ```
 
-### 5. Abyssal Crawler — API
+### 5. Abyssal Crawler — API + Verification
+
+**Crawler behavior rules (enforced in `worker.py` and `main.py`):**
+- A job that finishes with `pages_crawled == 0` is marked **`failed`**, never `completed`.
+- Completed jobs are hidden behind a **"Show completed jobs"** toggle in the Admin UI.
+- **Seeding only happens on a genuinely empty database** (zero jobs of any kind). Restarting an existing DB is always a no-op for the seeder. If seed jobs fail because i2pd wasn't ready, rerun them manually from the Admin UI — the seeder will not retry on its own.
+- Seeds fire 120 s after startup (background task) to give i2pd time to bootstrap.
 
 ```sh
-# List crawl jobs
+# List all crawl jobs
 curl -s -H "api-key: dev-key-12345" http://localhost/api/abyssal/crawl/jobs
-# Expect: JSON with jobs array, status 200
+# Expect: JSON array; seed URLs (notbob, stats, reg, i2pd) present on fresh DB
 
-# Start a crawl job (optional — only run if you want to actually crawl)
-# curl -s -X POST -H "api-key: dev-key-12345" -H "Content-Type: application/json" \
-#   -d '{"seed":"http://example.i2p","max_pages":5,"depth":1}' \
-#   http://localhost/api/abyssal/crawl/start
+# No completed job should ever have 0 pages (invariant check)
+curl -s -H "api-key: dev-key-12345" http://localhost/api/abyssal/crawl/jobs | \
+  python3 -c "import sys,json; bad=[j for j in json.load(sys.stdin) if j['status']=='completed' and j['pages_crawled']==0]; print('BAD:',bad) if bad else print('OK')"
+# Expect: OK
+
+# Auto-spawn check — after notbob/stats crawl, many child jobs should exist
+curl -s -H "api-key: dev-key-12345" http://localhost/api/abyssal/crawl/jobs | \
+  python3 -c "import sys,json; jobs=json.load(sys.stdin); print(len(jobs),'total jobs')"
+# Expect: well more than 4 after any seed crawl completes (auto-spawn creates child jobs)
+
+# crawl_queue drains to zero once a job finishes (regression check for infinite-loop bug)
+docker exec nexus-abyssal-backend-1 \
+  python3 -c "import asyncio,aiosqlite; async def r(): db=await aiosqlite.connect('/data/crawler.db'); r=await db.execute_fetchall('SELECT job_id,COUNT(*) c FROM crawl_queue GROUP BY job_id'); [print(row) for row in r]; await db.close(); asyncio.run(r())"
+# Expect: empty output (or only rows for actively running jobs)
+
+# Seed URL duplicate check — each seed should appear only once across all jobs
+curl -s -H "api-key: dev-key-12345" http://localhost/api/abyssal/crawl/jobs | \
+  python3 -c "
+import sys,json
+from collections import Counter
+jobs=json.load(sys.stdin)
+seeds=['http://notbob.i2p','http://stats.i2p','http://reg.i2p','http://i2pd.i2p']
+counts=Counter(j['url'] for j in jobs if j['url'] in seeds)
+print('OK' if all(v==1 for v in counts.values()) else 'DUPLICATES:'+str(dict(counts)))
+"
+# Expect: OK  (restart must not create extra seed jobs)
 ```
+
+**Crawler/Wayback integration checklist:**
+- [ ] After a crawl job completes with pages > 0, `wayback/stats` shows `total_snapshots > 0`
+- [ ] `wayback/urls` lists at least one URL from the crawled site
+- [ ] Snapshot files actually exist on disk (not just in DB):
+  ```sh
+  docker exec nexus-abyssal-backend-1 \
+    python3 -c "
+import asyncio, aiosqlite, os
+async def r():
+    db = await aiosqlite.connect('/data/crawler.db')
+    rows = await db.execute_fetchall('SELECT file_path FROM wayback_snapshots LIMIT 5')
+    for row in rows:
+        exists = os.path.exists(row['file_path'])
+        print('OK' if exists else 'MISSING', row['file_path'])
+    await db.close()
+asyncio.run(r())
+"
+  # Expect: all lines start with OK
+  ```
+- [ ] Snapshot viewer renders a real page (pick any ID from `wayback/stats` recent_snapshots):
+  ```sh
+  ID=$(curl -s http://localhost/api/abyssal/wayback/stats | python3 -c "import sys,json; s=json.load(sys.stdin); print(s['recent_snapshots'][0].get('id',''))" 2>/dev/null)
+  curl -s "http://localhost/api/abyssal/wayback/snapshots/${ID}/view" | python3 -c "import sys,json; d=json.load(sys.stdin); print('OK' if d.get('content') else 'EMPTY')"
+  # Expect: OK
+  ```
+- [ ] `/api/abyssal/archive` directory exists and contains subdirectories:
+  ```sh
+  docker exec nexus-abyssal-backend-1 ls /data/archive/
+  # Expect: one directory per crawled hostname
+  ```
+
+### 5.5 Abyssal Eepsite — SAM Tunnel Info
+
+```sh
+# Eepsite endpoint returns b32 addresses for both SAM tunnels
+curl -s http://localhost/api/abyssal/eepsite | python3 -c "import sys,json; t=json.load(sys.stdin)['tunnels']; print(len(t),'tunnels'); [print(n['name'],n['b32_address']) for n in t]"
+# Expect: 2 tunnels, each with a *.b32.i2p address
+```
+
+### 5.6 Dashboard — Eepsite Card + Bandwidth Letter Presets
+
+Dashboard shows:
+- **Eepsite card**: displays in the Router Info grid, shows abyssal + abyssal-api b32 addresses with collapsible
+- **Bandwidth letter presets**: K(16), L(32), M(64), N(128), O(256), P(512), X(1024) buttons replace raw KB/s inputs; auto mode maps slow-2g→K, 2g→L, 3g→N, 4g→P
 
 ### 6. Prism Dashboard — API + Frontend
 
@@ -352,6 +456,13 @@ curl -s http://localhost/ | grep -o "search\|Search\|abyssal\|Abyssal"
 # Expect: non-empty — page contains search-related content
 ```
 
+**Crawler Admin UI checklist (`/admin`):**
+- [ ] Active jobs (running/pending/paused/failed) visible immediately in the main list
+- [ ] Completed jobs hidden by default behind "Show completed jobs" button
+- [ ] Clicking the button reveals the collapsed completed jobs section
+- [ ] Completed jobs badge shows correct count
+- [ ] Pause/resume/rerun/delete buttons work correctly per job status
+
 ### 10. Prism Dashboard — Full-Stack Integration
 
 ```sh
@@ -373,3 +484,135 @@ curl -s http://localhost/api/health
 - [ ] `AGENTS.md` updated with new conventions, services, or commands
 - [ ] Docs updated (`prism/SESSION_PROMPT.md`, `prism/AGENTS.md`) for Prism-specific changes
 - [ ] Commit message matches repo style (concise, prefixed by subsystem if applicable)
+
+### 12. Abyssal — Archive, FTS5, Graph, i2pd Proxy, Error Log
+
+```sh
+# ── Snapshot files exist on disk (catches ARCHIVE_ROOT str-vs-Path bug) ───────
+docker exec nexus-abyssal-backend-1 python3 - <<'EOF'
+import asyncio, aiosqlite, os
+async def r():
+    db = await aiosqlite.connect("/data/crawler.db")
+    db.row_factory = aiosqlite.Row
+    rows = await db.execute_fetchall("SELECT file_path FROM wayback_snapshots LIMIT 20")
+    if not rows:
+        print("No snapshots in DB yet")
+    else:
+        missing = [r["file_path"] for r in rows if not os.path.exists(r["file_path"])]
+        print("MISSING:", missing if missing else "none — all files present on disk")
+    await db.close()
+asyncio.run(r())
+EOF
+# Expect: MISSING: none — all files present on disk
+
+# ── FTS5 row count matches crawled_pages (index in sync) ─────────────────────
+docker exec nexus-abyssal-backend-1 python3 - <<'EOF'
+import asyncio, aiosqlite
+async def r():
+    db = await aiosqlite.connect("/data/crawler.db")
+    db.row_factory = aiosqlite.Row
+    pages = (await db.execute_fetchall("SELECT COUNT(*) AS n FROM crawled_pages"))[0]["n"]
+    fts   = (await db.execute_fetchall("SELECT COUNT(*) AS n FROM pages_fts"))[0]["n"]
+    status = "OK" if pages == fts else "MISMATCH — FTS index out of sync"
+    print(f"crawled_pages={pages}  pages_fts={fts}  {status}")
+    await db.close()
+asyncio.run(r())
+EOF
+# Expect: counts identical
+
+# ── FTS5 search actually returns results (not just HTTP 200 with empty array) ──
+curl -s "http://localhost/api/abyssal/search?q=i2p" \
+  | python3 -c "import sys,json; r=json.load(sys.stdin); print('total:', r['total'], '| OK' if r['total'] > 0 else '| NO RESULTS — crawl first')"
+# Expect: total > 0
+
+# ── Link graph populated after a crawl ────────────────────────────────────────
+curl -s http://localhost/api/abyssal/graph \
+  | python3 -c "import sys,json; g=json.load(sys.stdin); print('nodes:', len(g['nodes']), '| links:', len(g['links']))"
+# Expect: nodes > 1, links > 0 (auto-spawn creates many child nodes)
+
+# ── i2pd HTTP proxy reachable from INSIDE the backend container ───────────────
+# If this fails, no crawling is possible regardless of i2pd's own status
+docker exec nexus-abyssal-backend-1 python3 - <<'EOF'
+import urllib.request, urllib.error
+proxy  = urllib.request.ProxyHandler({"http": "http://i2pd:4444"})
+opener = urllib.request.build_opener(proxy)
+try:
+    resp = opener.open("http://notbob.i2p", timeout=30)
+    print(f"OK — HTTP {resp.status}")
+except urllib.error.HTTPError as e:
+    print(f"OK — HTTP {e.code} (proxy routing, eepsite returned error code)")
+except Exception as e:
+    print(f"FAIL — {e}")
+EOF
+# Expect: OK  (any HTTP status is fine; exception = proxy itself is unreachable)
+
+# ── No ERROR-level log entries in the backend ─────────────────────────────────
+docker logs nexus-abyssal-backend-1 2>&1 | grep " ERROR " | tail -10
+# Expect: empty (investigate any lines that appear)
+
+# ── Scheduler and seeder started correctly ────────────────────────────────────
+docker logs nexus-abyssal-backend-1 2>&1 | grep -E "scheduler|seed|fresh database"
+# Expect:
+#   "Auto-recrawl scheduler started (check every 300s, recrawl after 24h, jitter up to 3600s)"
+#   AND one of:
+#   "Fresh database — seeding N crawl job(s) after 120s delay"  (first boot)
+#   "Database already has N job(s) — skipping seed (not a fresh DB)"  (subsequent boots)
+```
+
+### 13. Public Addressbook
+
+```sh
+# Addressbook endpoint returns data — no auth required (intentionally public)
+curl -s "http://localhost/api/abyssal/addressbook" \
+  | python3 -c "import sys,json; r=json.load(sys.stdin); print('total:', r['total'])"
+# Expect: total > 0 after any crawl has run
+
+# hosts.txt line format check
+curl -s "http://localhost/api/abyssal/addressbook?per_page=5" \
+  | python3 -c "
+import sys, json
+for s in json.load(sys.stdin)['sites']:
+    if s['b32']:
+        b32 = s['b32'] if s['b32'].endswith('.b32.i2p') else s['b32'] + '.b32.i2p'
+        print(f\"{s['hostname']}={b32}\")
+"
+# Expect: one hostname=*.b32.i2p line per resolved site
+
+# Addressbook page loads in browser (SPA route)
+curl -s -o /dev/null -w "%{http_code}" http://localhost/addressbook
+# Expect: 200
+
+### 14. Registry Address Book Crawler
+
+```sh
+# Seed registries present
+docker exec nexus-abyssal-backend-1 python3 -c "
+import asyncio, aiosqlite
+async def r():
+    db = await aiosqlite.connect('/data/crawler.db')
+    db.row_factory = aiosqlite.Row
+    rows = await db.execute_fetchall('SELECT url, last_fetched, entries_found FROM registry_sources')
+    for r in rows: print(r['url'], '| last_fetched:', r['last_fetched'] or 'never', '| entries:', r['entries_found'])
+    await db.close()
+asyncio.run(r())
+"
+# Expect: at least 6 seed registries; some with entries_found > 0 after first cycle
+
+# Auto-discovery added new registry URLs (bigrat.i2p, /export/alive-hosts.txt, etc.)
+docker exec nexus-abyssal-backend-1 python3 -c "
+import asyncio, aiosqlite
+async def r():
+    db = await aiosqlite.connect('/data/crawler.db')
+    rows = await db.execute_fetchall('SELECT url FROM registry_sources WHERE url NOT IN (?,?,?,?,?,?) ORDER BY url', ['http://reg.i2p/hosts.txt','http://notbob.i2p/hosts.txt','http://stats.i2p/hosts.txt','http://inr.i2p/hosts.txt','http://inr.i2p/contacts/','http://i2pd.i2p/hosts.txt'])
+    print('Auto-discovered' if rows else 'No new discoveries yet')
+    for r in rows: print(' ', r['url'])
+    await db.close()
+asyncio.run(r())
+"
+# Expect: auto-discovered entries like http://bigrat.i2p/hosts.txt, http://inr.i2p/export/alive-hosts.txt
+
+# Hosts from registry appear in addressbook
+curl -s http://localhost/api/abyssal/addressbook | python3 -c "import sys,json; r=json.load(sys.stdin); print('total:', r['total'])"
+# Expect: total > 0 (entries from registry added to site_status)
+```
+```

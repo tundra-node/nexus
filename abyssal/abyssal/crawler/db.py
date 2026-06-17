@@ -56,6 +56,7 @@ async def init_db():
             job_id INTEGER NOT NULL,
             url TEXT NOT NULL,
             depth INTEGER DEFAULT 0,
+            UNIQUE(job_id, url),
             FOREIGN KEY (job_id) REFERENCES crawl_jobs(id) ON DELETE CASCADE
         );
 
@@ -65,6 +66,8 @@ async def init_db():
             address_helper TEXT DEFAULT '',
             checks_online INTEGER DEFAULT 0,
             checks_offline INTEGER DEFAULT 0,
+            checks_limited INTEGER DEFAULT 0,
+            last_status INTEGER DEFAULT 0,
             last_seen_online TEXT,
             last_seen_offline TEXT,
             last_crawled TEXT DEFAULT (datetime('now'))
@@ -86,6 +89,27 @@ async def init_db():
         );
     """)
     await db.commit()
+    # Migrate existing DBs that lack the new columns
+    for col in ("checks_limited", "last_status", "created_at", "recrawl_at"):
+        try:
+            if col in ("checks_limited", "last_status"):
+                await db.execute(f"ALTER TABLE site_status ADD COLUMN {col} INTEGER DEFAULT 0")
+            elif col == "created_at":
+                await db.execute("ALTER TABLE site_status ADD COLUMN created_at TEXT")
+                await db.execute("UPDATE site_status SET created_at = COALESCE(last_crawled, datetime('now')) WHERE created_at IS NULL")
+            else:
+                await db.execute("ALTER TABLE site_status ADD COLUMN recrawl_at TEXT")
+            await db.commit()
+            logger.info("Added column %s to site_status", col)
+        except Exception:
+            pass
+    for col in ("pages_failed", "pages_limited"):
+        try:
+            await db.execute(f"ALTER TABLE crawl_jobs ADD COLUMN {col} INTEGER DEFAULT 0")
+            await db.commit()
+            logger.info("Added column %s to crawl_jobs", col)
+        except Exception:
+            pass
     await db.close()
     logger.info("Crawler database initialized with FTS5 search")
 
@@ -100,7 +124,7 @@ async def create_job(url: str, max_pages: int = 0, max_depth: int = 5,
     )
     job_id = cur.lastrowid
     await db.execute(
-        "INSERT INTO crawl_queue (job_id, url, depth) VALUES (?, ?, 0)",
+        "INSERT OR IGNORE INTO crawl_queue (job_id, url, depth) VALUES (?, ?, 0)",
         (job_id, url),
     )
     await db.commit()
@@ -134,6 +158,20 @@ async def update_job(job_id: int, **kwargs):
 async def inc_job_pages(job_id: int):
     db = await get_db()
     await db.execute("UPDATE crawl_jobs SET pages_crawled = pages_crawled + 1 WHERE id = ?", (job_id,))
+    await db.commit()
+    await db.close()
+
+
+async def inc_job_failed(job_id: int):
+    db = await get_db()
+    await db.execute("UPDATE crawl_jobs SET pages_failed = pages_failed + 1 WHERE id = ?", (job_id,))
+    await db.commit()
+    await db.close()
+
+
+async def inc_job_limited(job_id: int):
+    db = await get_db()
+    await db.execute("UPDATE crawl_jobs SET pages_limited = pages_limited + 1 WHERE id = ?", (job_id,))
     await db.commit()
     await db.close()
 
@@ -193,23 +231,58 @@ async def save_page(job_id: int, url: str, title: str, content: str,
     return page_id
 
 
-async def enqueue_urls(job_id: int, urls: list[tuple[str, int]]):
+async def save_failed_page(job_id: int, url: str, status_code: int, depth: int, error: str = ""):
+    """Save a failed URL to crawled_pages (without FTS5 indexing) and increment the appropriate counter.
+
+    - status_code == 429         → increments pages_limited
+    - status_code >= 400 or 0    → increments pages_failed
+    """
     db = await get_db()
-    for url, depth in urls:
-        exists = await page_exists_in_job(job_id, url)
-        if not exists:
-            try:
-                await db.execute(
-                    "INSERT INTO crawl_queue (job_id, url, depth) VALUES (?, ?, ?)",
-                    (job_id, url, depth),
-                )
-            except Exception:
-                pass
+    await db.execute(
+        """INSERT INTO crawled_pages
+           (job_id, url, title, content, status_code, depth, description)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (job_id, url, f"HTTP {status_code}", "", status_code, depth,
+         error or f"HTTP {status_code}" if status_code else error),
+    )
+    if status_code == 429:
+        await db.execute("UPDATE crawl_jobs SET pages_limited = pages_limited + 1 WHERE id = ?", (job_id,))
+    else:
+        await db.execute("UPDATE crawl_jobs SET pages_failed = pages_failed + 1 WHERE id = ?", (job_id,))
     await db.commit()
     await db.close()
 
 
-async def upsert_site_status(hostname: str, online: bool, b32: str = "", address_helper: str = ""):
+async def enqueue_urls(job_id: int, urls: list[tuple[str, int]]):
+    """Add URLs to the crawl queue, skipping any already crawled or already queued."""
+    db = await get_db()
+    for url, depth in urls:
+        # Skip if already crawled
+        already_crawled = await db.execute_fetchall(
+            "SELECT 1 FROM crawled_pages WHERE job_id = ? AND url = ?", (job_id, url)
+        )
+        if already_crawled:
+            continue
+        # INSERT OR IGNORE handles the UNIQUE(job_id, url) constraint silently
+        try:
+            await db.execute(
+                "INSERT OR IGNORE INTO crawl_queue (job_id, url, depth) VALUES (?, ?, ?)",
+                (job_id, url, depth),
+            )
+        except Exception as e:
+            logger.debug("Could not enqueue %s: %s", url, e)
+    await db.commit()
+    await db.close()
+
+
+async def upsert_site_status(
+    hostname: str,
+    online: bool = False,
+    limited: bool = False,
+    b32: str = "",
+    address_helper: str = "",
+    status_code: int = 0,
+):
     db = await get_db()
     existing = await db.execute_fetchall(
         "SELECT * FROM site_status WHERE hostname = ?", (hostname,)
@@ -219,31 +292,48 @@ async def upsert_site_status(hostname: str, online: bool, b32: str = "", address
         if online:
             await db.execute(
                 "UPDATE site_status SET checks_online = checks_online + 1, last_seen_online = ?, "
-                "last_crawled = ?, b32 = CASE WHEN ? != '' THEN ? ELSE b32 END, "
+                "last_crawled = ?, last_status = ?, "
+                "b32 = CASE WHEN ? != '' THEN ? ELSE b32 END, "
                 "address_helper = CASE WHEN ? != '' THEN ? ELSE address_helper END "
                 "WHERE hostname = ?",
-                (now, now, b32, b32, address_helper, address_helper, hostname),
+                (now, now, status_code, b32, b32, address_helper, address_helper, hostname),
+            )
+        elif limited:
+            await db.execute(
+                "UPDATE site_status SET checks_limited = checks_limited + 1, "
+                "last_crawled = ?, last_status = ?, "
+                "b32 = CASE WHEN ? != '' THEN ? ELSE b32 END, "
+                "address_helper = CASE WHEN ? != '' THEN ? ELSE address_helper END "
+                "WHERE hostname = ?",
+                (now, status_code, b32, b32, address_helper, address_helper, hostname),
             )
         else:
             await db.execute(
                 "UPDATE site_status SET checks_offline = checks_offline + 1, last_seen_offline = ?, "
-                "last_crawled = ?, b32 = CASE WHEN ? != '' THEN ? ELSE b32 END, "
+                "last_crawled = ?, last_status = ?, "
+                "b32 = CASE WHEN ? != '' THEN ? ELSE b32 END, "
                 "address_helper = CASE WHEN ? != '' THEN ? ELSE address_helper END "
                 "WHERE hostname = ?",
-                (now, now, b32, b32, address_helper, address_helper, hostname),
+                (now, now, status_code, b32, b32, address_helper, address_helper, hostname),
             )
     else:
         if online:
             await db.execute(
-                "INSERT INTO site_status (hostname, b32, address_helper, checks_online, checks_offline, "
-                "last_seen_online, last_crawled) VALUES (?, ?, ?, 1, 0, ?, ?)",
-                (hostname, b32, address_helper, now, now),
+                "INSERT INTO site_status (hostname, b32, address_helper, checks_online, checks_offline, checks_limited, last_status, last_seen_online, last_crawled, created_at) "
+                "VALUES (?, ?, ?, 1, 0, 0, ?, ?, ?, ?)",
+                (hostname, b32, address_helper, status_code, now, now, now),
+            )
+        elif limited:
+            await db.execute(
+                "INSERT INTO site_status (hostname, b32, address_helper, checks_online, checks_offline, checks_limited, last_status, last_crawled, created_at) "
+                "VALUES (?, ?, ?, 0, 0, 1, ?, ?, ?)",
+                (hostname, b32, address_helper, status_code, now, now),
             )
         else:
             await db.execute(
-                "INSERT INTO site_status (hostname, b32, address_helper, checks_online, checks_offline, "
-                "last_seen_offline, last_crawled) VALUES (?, ?, ?, 0, 1, ?, ?)",
-                (hostname, b32, address_helper, now, now),
+                "INSERT INTO site_status (hostname, b32, address_helper, checks_online, checks_offline, checks_limited, last_status, last_seen_offline, last_crawled, created_at) "
+                "VALUES (?, ?, ?, 0, 1, 0, ?, ?, ?, ?)",
+                (hostname, b32, address_helper, status_code, now, now, now),
             )
     await db.commit()
     await db.close()
@@ -290,15 +380,79 @@ async def record_site_link(source_hostname: str, target_hostname: str):
     await db.close()
 
 
-async def get_auto_crawl_sites() -> list[str]:
+def recrawl_interval_for_status(status_code: int) -> int:
+    """Return recrawl interval in hours based on the last HTTP status code."""
+    if status_code == 0 or status_code >= 500:
+        return 168  # connection error / server error → 7 days
+    if status_code == 429:
+        return 72   # rate limited → 3 days
+    if 400 <= status_code < 500:
+        return 72   # client error (403, 404, etc.) → 3 days
+    return 24       # 200 OK or other success → 1 day
+
+
+async def get_auto_crawl_sites() -> list[tuple[str, int]]:
+    """Return (hostname, recrawl_interval_hours) for all sites due for recrawl.
+    
+    Checks recrawl_at first (if set); otherwise falls back to last_crawled + interval.
+    """
     db = await get_db()
     rows = await db.execute_fetchall(
-        "SELECT hostname FROM site_status "
-        "WHERE last_crawled IS NULL OR last_crawled < datetime('now', '-24 hours')"
-        "ORDER BY last_crawled ASC"
+        "SELECT hostname, last_status, last_crawled, recrawl_at FROM site_status"
     )
     await db.close()
-    return [r["hostname"] for r in rows]
+    now = datetime.now(timezone.utc)
+    due: list[tuple[str, int]] = []
+    for r in rows:
+        interval = recrawl_interval_for_status(r["last_status"])
+        recrawl_at = r["recrawl_at"]
+        last_crawled = r["last_crawled"]
+        if recrawl_at:
+            try:
+                scheduled = datetime.fromisoformat(recrawl_at)
+                if scheduled <= now:
+                    due.append((r["hostname"], interval))
+                continue
+            except:
+                pass
+        if last_crawled is None:
+            due.append((r["hostname"], interval))
+        else:
+            try:
+                last = datetime.fromisoformat(last_crawled)
+                if (now - last).total_seconds() > interval * 3600:
+                    due.append((r["hostname"], interval))
+            except:
+                due.append((r["hostname"], interval))
+    return due
+
+
+async def get_scheduled_sites() -> list[dict]:
+    """Return sites with a future recrawl_at timestamp (scheduled for recrawl)."""
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT hostname, b32, last_status, recrawl_at FROM site_status "
+        "WHERE recrawl_at IS NOT NULL AND recrawl_at > datetime('now') "
+        "ORDER BY recrawl_at ASC"
+    )
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def set_recrawl_at(hostname: str, recrawl_at: str):
+    """Set the recrawl_at timestamp for a hostname."""
+    db = await get_db()
+    await db.execute("UPDATE site_status SET recrawl_at = ? WHERE hostname = ?", (recrawl_at, hostname))
+    await db.commit()
+    await db.close()
+
+
+async def clear_recrawl_at(hostname: str):
+    """Clear the recrawl_at timestamp (crawl is starting now)."""
+    db = await get_db()
+    await db.execute("UPDATE site_status SET recrawl_at = NULL WHERE hostname = ?", (hostname,))
+    await db.commit()
+    await db.close()
 
 
 async def get_graph_data() -> dict:
@@ -348,3 +502,76 @@ async def delete_job(job_id: int):
     await db.execute("DELETE FROM crawl_queue WHERE job_id = ?", (job_id,))
     await db.commit()
     await db.close()
+
+
+async def get_active_job_for_hostname(hostname: str) -> Optional[int]:
+    """
+    Return the ID of a currently running/pending/paused job whose seed URL
+    contains `hostname`, or None if no such job exists.
+
+    Used by the scheduler to avoid spawning duplicate recrawl jobs.
+    Unlike the old get_job_for_hostname this ONLY matches active statuses,
+    so completed/failed runs never block a new scheduled recrawl.
+    """
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        """SELECT id FROM crawl_jobs
+           WHERE url LIKE ?
+             AND status IN ('running', 'pending', 'paused')
+           ORDER BY created_at DESC
+           LIMIT 1""",
+        (f"%{hostname}%",),
+    )
+    await db.close()
+    return rows[0]["id"] if rows else None
+
+
+async def get_addressbook(
+    q: str = "",
+    page: int = 1,
+    per_page: int = 100,
+) -> dict:
+    """
+    Return all known .i2p hostnames with their b32 addresses for the public
+    addressbook page.  Supports optional text filter across hostname and b32.
+    """
+    db = await get_db()
+    offset = (page - 1) * per_page
+
+    if q:
+        where  = "WHERE (hostname LIKE ? OR b32 LIKE ?)"
+        params: list = [f"%{q}%", f"%{q}%"]
+    else:
+        where  = ""
+        params = []
+
+    total_rows = await db.execute_fetchall(
+        f"SELECT COUNT(*) AS n FROM site_status {where}", params
+    )
+    total = total_rows[0]["n"] if total_rows else 0
+
+    rows = await db.execute_fetchall(
+        f"""SELECT
+                hostname,
+                b32,
+                address_helper                                      AS base64,
+                last_status,
+                (checks_online > 0)                                 AS ever_online,
+                (checks_online > 0 AND checks_online >= checks_offline AND checks_online >= checks_limited) AS likely_online,
+                last_seen_online,
+                last_crawled                                        AS last_seen,
+                created_at                                          AS added_at,
+                recrawl_at
+            FROM site_status
+            {where}
+            ORDER BY hostname ASC
+            LIMIT ? OFFSET ?""",
+        (*params, per_page, offset),
+    )
+    await db.close()
+    return {
+        "sites":    [dict(r) for r in rows],
+        "total":    total,
+        "page":     page,
+        "per_page": per_page,
+    }

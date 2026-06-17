@@ -4,16 +4,18 @@ import NotFound from "@/pages/NotFound";
 import Home from "@/pages/Home";
 import BrowserPage from "@/pages/BrowserPage";
 import AddressbookPage from "@/pages/AddressbookPage";
+import AdminPage from "@/pages/AdminPage";
 import { Router, Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, Globe, BookmarkIcon } from "lucide-react";
+import { LayoutDashboard, Globe, BookmarkIcon, Settings } from "lucide-react";
 
 const navItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/browser", label: "Browser", icon: Globe },
   { path: "/addressbook", label: "Addressbook", icon: BookmarkIcon },
+  { path: "/admin", label: "Admin", icon: Settings },
 ];
 
 function Sidebar() {
@@ -50,6 +52,7 @@ function Router_() {
             <Route path={"/"} component={Home} />
             <Route path={"/browser"} component={BrowserPage} />
             <Route path={"/addressbook"} component={AddressbookPage} />
+            <Route path={"/admin"} component={AdminPage} />
             <Route component={NotFound} />
           </Switch>
         </main>

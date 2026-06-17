@@ -2,6 +2,17 @@ import { useState, useEffect } from 'react'
 import { getWaybackStats, getWaybackSnapshots, viewWaybackSnapshot, captureWayback, type WaybackStats, type WaybackSnapshot } from '../hooks/useAbyssalApi'
 import { Archive, Search, Loader2, Clock, HardDrive } from 'lucide-react'
 
+function normalizeI2pUrl(raw: string): string {
+  const u = raw.trim()
+  if (!u) return u
+  const stripped = u.replace(/^https?:\/\//i, '')
+  const slashIdx = stripped.indexOf('/')
+  let host = slashIdx === -1 ? stripped : stripped.slice(0, slashIdx)
+  const rest = slashIdx === -1 ? '' : stripped.slice(slashIdx)
+  if (host && !host.toLowerCase().endsWith('.i2p')) host += '.i2p'
+  return `http://${host}${rest}`
+}
+
 export default function WaybackPage() {
   const [stats, setStats] = useState<WaybackStats | null>(null)
   const [url, setUrl] = useState('')
@@ -12,15 +23,27 @@ export default function WaybackPage() {
   const [viewing, setViewing] = useState<{ id: number; content: string; url: string } | null>(null)
   const [capturing, setCapturing] = useState(false)
 
+  const normalized  = normalizeI2pUrl(url)
+  const showPreview = url.trim() !== '' && normalized !== url.trim()
+
   useEffect(() => {
     getWaybackStats().then(setStats).catch(() => {}).finally(() => setLoading(false))
+    const params = new URLSearchParams(window.location.search)
+    const urlParam = params.get('url')
+    if (urlParam) {
+      setUrl(urlParam)
+      getWaybackSnapshots(normalizeI2pUrl(urlParam)).then(data => {
+        setSnapshots(data.snapshots)
+        setSnapTotal(data.total)
+      }).catch(() => {})
+    }
   }, [])
 
   const searchSnapshots = async () => {
     if (!url.trim()) return
     setSnapLoading(true)
     try {
-      const data = await getWaybackSnapshots(url.trim())
+      const data = await getWaybackSnapshots(normalized)
       setSnapshots(data.snapshots)
       setSnapTotal(data.total)
     } catch {}
@@ -38,7 +61,7 @@ export default function WaybackPage() {
     if (!url.trim()) return
     setCapturing(true)
     try {
-      await captureWayback(url.trim())
+      await captureWayback(normalized)
       await searchSnapshots()
     } catch {}
     setCapturing(false)
@@ -63,6 +86,12 @@ export default function WaybackPage() {
           <span className="flex items-center gap-1"><Archive className="w-3 h-3" /> {stats.total_snapshots.toLocaleString()} snapshots</span>
           <span className="flex items-center gap-1"><GlobeIcon /> {stats.total_urls.toLocaleString()} URLs</span>
           <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" /> {formatBytes(stats.total_size_bytes)}</span>
+        </div>
+      )}
+
+      {showPreview && (
+        <div className="text-xs text-cyan-500 mb-1 ml-1">
+          Searching for: <span className="font-mono">{normalized}</span>
         </div>
       )}
 

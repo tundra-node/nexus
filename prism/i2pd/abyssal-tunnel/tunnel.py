@@ -221,6 +221,32 @@ def handle_stream(name, session_id, sid, backend_host, backend_port):
             pass
 
 
+def collect_and_write_tunnel_info():
+    """Read persisted keys and write /data/tunnel-info.json with b32 addresses."""
+    info = []
+    for t in TUNNELS:
+        path = os.path.join(KEYS_DIR, f"{t['name']}.keys")
+        try:
+            with open(path) as f:
+                full_key = f.read().strip()
+            b32 = get_b32(full_key)
+            b32_full = f"{b32}.b32.i2p"
+            info.append({
+                "name": t["name"],
+                "b32": b32,
+                "b32_address": b32_full,
+                "host": t["backend_host"],
+                "port": t["backend_port"],
+            })
+        except Exception as e:
+            log.warning(f"[{t['name']}] Could not read keys for info file: {e}")
+    if info:
+        out_path = os.path.join(os.path.dirname(KEYS_DIR), "tunnel-info.json")
+        with open(out_path, "w") as f:
+            json.dump(info, f, indent=2)
+        log.info(f"Wrote tunnel info to {out_path}: {[i['b32_address'] for i in info]}")
+
+
 def main():
     log.info("Abyssal SAM Tunnel Service")
     log.info(f"SAM: {SAM_HOST}:{SAM_PORT}, Keys: {KEYS_DIR}")
@@ -255,6 +281,18 @@ def main():
     for t in threads:
         t.start()
     log.info("All tunnels started")
+
+    # Schedule periodic tunnel-info writes
+    def write_loop():
+        while True:
+            time.sleep(30)
+            collect_and_write_tunnel_info()
+
+    threading.Thread(target=write_loop, daemon=True).start()
+
+    # Write initial info after short delay
+    time.sleep(5)
+    collect_and_write_tunnel_info()
 
     while True:
         time.sleep(60)

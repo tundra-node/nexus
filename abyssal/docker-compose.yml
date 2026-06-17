@@ -1,17 +1,11 @@
 name: nexus
 
 services:
-  # ── I2P Router ────────────────────────────────────────────
+  # ── I2P Router (host network for proper LeaseSet publishing) ──
   i2pd:
     image: purplei2p/i2pd:latest
+    network_mode: host
     restart: unless-stopped
-    ports:
-      - "4444:4444"
-      - "4445:4445"
-      - "7650:7650"
-      - "7070:7070"
-      - "10472:10472"
-      - "10472:10472/udp"
     volumes:
       - i2pd-data:/home/i2pd/data
       - ../prism/i2pd/i2pd.conf:/home/i2pd/data/i2pd.conf
@@ -20,9 +14,6 @@ services:
       - ../prism/i2pd/certs/i2pcontrol.key.pem:/home/i2pd/data/i2pcontrol.key.pem
     dns:
       - 8.8.8.8
-    networks:
-      abyssal:
-        ipv4_address: 172.18.0.2
 
   # ── Abyssal (Public) ──────────────────────────────────────
   abyssal-tunnel:
@@ -31,11 +22,13 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      SAM_HOST: i2pd
+      SAM_HOST: 172.18.0.1
     depends_on:
       - i2pd
       - abyssal-frontend
       - abyssal-backend
+    volumes:
+      - abyssal-data:/data
     networks:
       abyssal:
         ipv4_address: 172.18.0.10

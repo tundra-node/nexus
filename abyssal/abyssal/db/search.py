@@ -8,6 +8,7 @@ from abyssal.config import DB_PATH
 async def get_db() -> aiosqlite.Connection:
     db = await aiosqlite.connect(str(DB_PATH))
     db.row_factory = aiosqlite.Row
+    await db.execute("PRAGMA journal_mode=WAL")
     return db
 
 
@@ -104,6 +105,42 @@ async def get_page(page_id: int) -> Optional[dict]:
     return dict(rows[0]) if rows else None
 
 
+def _build_page_tree(pages: list[dict]) -> list[dict]:
+    """Group flat page list into a folder-tree structure by URL path segments."""
+    tree: dict = {}
+    for p in pages:
+        url = p["url"]
+        try:
+            after_proto = url.split("://", 1)[1] if "://" in url else url
+            path = "/" + after_proto.split("/", 1)[1] if "/" in after_proto else "/"
+        except (IndexError, ValueError):
+            path = "/"
+        segments = [s for s in path.split("/") if s]
+        node = tree
+        for i, seg in enumerate(segments):
+            is_last = i == len(segments) - 1
+            if seg not in node:
+                node[seg] = {"children": {}}
+            if is_last:
+                node[seg]["page"] = p
+            node = node[seg]["children"]
+    def _to_list(n: dict) -> list[dict]:
+        items = []
+        for name, val in n.items():
+            has_page = "page" in val
+            kids = _to_list(val.get("children", {}))
+            if has_page and kids:
+                items.append({"name": name, "type": "dir", "children": kids})
+                items.append({"name": "(index)", "type": "file", "page": val["page"]})
+            elif has_page:
+                items.append({"name": name, "type": "file", "page": val["page"]})
+            else:
+                items.append({"name": name, "type": "dir", "children": kids})
+        items.sort(key=lambda x: (1 if x["type"] == "file" else 0, x["name"].lower()))
+        return items
+    return _to_list(tree)
+
+
 async def get_site(hostname: str) -> Optional[dict]:
     db = await get_db()
     rows = await db.execute_fetchall(
@@ -117,10 +154,11 @@ async def get_site(hostname: str) -> Optional[dict]:
     pages = await db.execute_fetchall(
         "SELECT id, url, title, language, site_type, crawled_at "
         "FROM crawled_pages WHERE url LIKE ? "
-        "ORDER BY crawled_at DESC LIMIT 50",
+        "ORDER BY crawled_at ASC LIMIT 200",
         (f"%{hostname}%",),
     )
     site["pages"] = [dict(p) for p in pages]
+    site["page_tree"] = _build_page_tree(site["pages"])
     await db.close()
     return site
 
@@ -139,34 +177,42 @@ async def get_sites(
     params: list[str] = []
 
     if language:
-        conditions.append("language = ?")
+        conditions.append("latest.language = ?")
         params.append(language)
     if site_type:
-        conditions.append("site_type = ?")
+        conditions.append("latest.site_type = ?")
         params.append(site_type)
     if online is not None:
         if online:
-            conditions.append("checks_online > checks_offline AND checks_online > 0")
+            conditions.append("s.checks_online > s.checks_offline AND s.checks_online > 0")
         else:
-            conditions.append("checks_offline >= checks_online OR checks_online = 0")
+            conditions.append("s.checks_offline >= s.checks_online OR s.checks_online = 0")
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
-    base_query = (
-        f"FROM site_status s "
-        f"LEFT JOIN crawled_pages p ON s.hostname = SUBSTR(p.url, INSTR(p.url, '://') + 3) "
-        f"AND p.id = (SELECT id FROM crawled_pages WHERE url LIKE '%' || s.hostname ORDER BY crawled_at DESC LIMIT 1) "
+    # Subquery gets latest page per hostname (avoids JOIN multiplication)
+    base = (
+        "FROM site_status s "
+        "LEFT JOIN ("
+        "  SELECT DISTINCT SUBSTR(url, INSTR(url, '://') + 3) AS hostname, "
+        "    FIRST_VALUE(title) OVER (PARTITION BY SUBSTR(url, INSTR(url, '://') + 3) ORDER BY crawled_at DESC) AS title, "
+        "    FIRST_VALUE(language) OVER (PARTITION BY SUBSTR(url, INSTR(url, '://') + 3) ORDER BY crawled_at DESC) AS language, "
+        "    FIRST_VALUE(site_type) OVER (PARTITION BY SUBSTR(url, INSTR(url, '://') + 3) ORDER BY crawled_at DESC) AS site_type "
+        "  FROM crawled_pages"
+        ") latest ON s.hostname = latest.hostname "
     )
 
     count_row = await db.execute_fetchall(
-        f"SELECT COUNT(*) as total {base_query} {where}", params,
+        f"SELECT COUNT(*) as total {base} {where}", params,
     )
     total = count_row[0]["total"] if count_row else 0
 
     rows = await db.execute_fetchall(
-        f"SELECT s.*, COALESCE(p.title, '') as title, COALESCE(p.language, '') as language, "
-        f"COALESCE(p.site_type, 'website') as site_type "
-        f"{base_query} {where} "
+        f"SELECT s.*, "
+        f"COALESCE(latest.title, '') as title, "
+        f"COALESCE(latest.language, '') as language, "
+        f"COALESCE(latest.site_type, 'website') as site_type "
+        f"{base} {where} "
         f"ORDER BY s.last_crawled DESC "
         f"LIMIT ? OFFSET ?",
         params + [per_page, offset],
@@ -174,14 +220,8 @@ async def get_sites(
 
     await db.close()
 
-    seen: dict[str, dict] = {}
-    for r in rows:
-        dr = dict(r)
-        if dr["hostname"] not in seen:
-            seen[dr["hostname"]] = dr
-
     return {
-        "results": list(seen.values()),
+        "results": [dict(r) for r in rows],
         "total": total,
         "page": page,
         "per_page": per_page,
@@ -192,17 +232,19 @@ async def get_facets() -> dict:
     db = await get_db()
 
     languages = await db.execute_fetchall(
-        "SELECT language, COUNT(*) as count FROM site_status s "
-        "JOIN crawled_pages p ON s.hostname = SUBSTR(p.url, INSTR(p.url, '://') + 3) "
-        "WHERE language != '' "
-        "GROUP BY language ORDER BY count DESC"
+        "SELECT ss.language, COUNT(*) as count FROM ("
+        "  SELECT DISTINCT SUBSTR(url, INSTR(url, '://') + 3) AS hostname, language "
+        "  FROM crawled_pages WHERE language != ''"
+        ") ss "
+        "GROUP BY ss.language ORDER BY count DESC"
     )
 
     site_types = await db.execute_fetchall(
-        "SELECT site_type, COUNT(*) as count FROM site_status s "
-        "JOIN crawled_pages p ON s.hostname = SUBSTR(p.url, INSTR(p.url, '://') + 3) "
-        "WHERE site_type != '' AND site_type != 'website' "
-        "GROUP BY site_type ORDER BY count DESC"
+        "SELECT ss.site_type, COUNT(*) as count FROM ("
+        "  SELECT DISTINCT SUBSTR(url, INSTR(url, '://') + 3) AS hostname, site_type "
+        "  FROM crawled_pages WHERE site_type != '' AND site_type != 'website'"
+        ") ss "
+        "GROUP BY ss.site_type ORDER BY count DESC"
     )
 
     await db.close()
