@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wayback Snapshot Viewer</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;background:#0a0e17;color:#e2e8f0;min-height:100vh}
+.viewer-header{background:rgba(10,14,23,0.95);backdrop-filter:blur(12px);border-bottom:1px solid #2d3b55;padding:0.75rem 1.5rem;display:flex;align-items:center;gap:1rem;position:sticky;top:0;z-index:100}
+.viewer-header a{color:#7c6aef;text-decoration:none;font-size:0.875rem}
+.viewer-header a:hover{text-decoration:underline}
+.viewer-header .url{color:#8899b4;font-size:0.8rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.viewer-header .close{color:#8899b4;text-decoration:none;font-size:1.25rem;line-height:1}
+.viewer-header .close:hover{color:#e2e8f0}
+#frame-container{flex:1;display:flex;flex-direction:column}
+#snapshot-frame{flex:1;border:none;background:#fff;width:100%}
+.loading{text-align:center;padding:3rem;color:#8899b4}
+.loading .spinner{display:inline-block;width:28px;height:28px;border:3px solid #2d3b55;border-top-color:#7c6aef;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:0.75rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="viewer-header">
+  <a href="#" onclick="window.close()">← Close</a>
+  <span class="url" id="snapshot-url">Loading...</span>
+  <a href="#" class="close" onclick="window.close()">×</a>
+</div>
+<div id="frame-container">
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div>Loading snapshot...</div>
+  </div>
+</div>
+<script>
+const params = new URLSearchParams(location.search);
+const snapshotId = params.get('id');
+const snapshotUrl = params.get('url') || '';
+
+document.getElementById('snapshot-url').textContent = snapshotUrl;
+
+if (!snapshotId) {
+  document.getElementById('loading').innerHTML = '<p>Error: No snapshot ID provided.</p>';
+} else {
+  fetch(`/api/abyssal/wayback/snapshots/${snapshotId}/view?url=${encodeURIComponent(snapshotUrl)}`)
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then(d => {
+      const frame = document.createElement('iframe');
+      frame.id = 'snapshot-frame';
+      frame.sandbox = 'allow-same-origin allow-scripts allow-forms';
+      document.getElementById('frame-container').innerHTML = '';
+      document.getElementById('frame-container').appendChild(frame);
+      const doc = frame.contentDocument || frame.contentWindow.document;
+      doc.open();
+      doc.write(d.content);
+      doc.close();
+    })
+    .catch(e => {
+      document.getElementById('loading').innerHTML = `<p>Error loading snapshot: ${e.message}</p>`;
+    });
+}
+</script>
+</body>
+</html>

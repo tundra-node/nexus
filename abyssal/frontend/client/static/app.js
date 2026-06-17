@@ -84,11 +84,16 @@ function route() {
   }
 }
 
-function navigate(url) { history.pushState(null, '', url); route(); }
+function navigate(url) { history.pushState(null, '', url); }
 window.addEventListener('popstate', route);
+window.onerror = function(msg, src, line, col, err) {
+  console.error('JS Error:', msg, 'at', src + ':' + line + ':' + col);
+  const m = document.getElementById('main');
+  if (m) m.innerHTML = `<div class="error-box"><div class="error-icon">⚠</div><div class="error-msg">JavaScript Error</div><div class="error-hint" style="font-family:monospace;font-size:0.8rem;word-break:break-all">${esc(String(msg))}<br>at ${esc(src||'')}:${line}:${col}</div><button onclick="location.reload()">Reload</button></div>`;
+};
 document.addEventListener('DOMContentLoaded', () => {
   ConnMonitor.init();
-  try { route(); } catch(e) { document.getElementById('main').innerHTML = errorBox('Routing error: ' + e.message, () => route()); }
+  try { route(); } catch(e) { console.error('Route error:', e); document.getElementById('main').innerHTML = errorBox('Routing error: ' + e.message, () => route()); }
 });
 
 /* ── Page Rendering ─────────────────────────────────────────────────────── */
@@ -434,8 +439,14 @@ window.showSnapshots = async function(id) {
         <span style="color:${s.status_code === 200 ? 'var(--green)' : 'var(--orange)'}">HTTP ${s.status_code}</span>
         <span style="color:var(--dim)">${s.snapshot_time || ''}</span>
         ${s.size_bytes ? `<span style="color:var(--dim)">${formatBytes(s.size_bytes)}</span>` : ''}
+        <a href="#" onclick="viewSnapshot('${s.id}','${esc(url)}');return false" style="margin-left:auto;color:var(--accent2)">View</a>
       </div>`).join('');
   } catch (e) { el.innerHTML = errorBox(e.message, () => showSnapshots(id)); }
+};
+
+window.viewSnapshot = function(snapshotId, url) {
+  const viewerUrl = `/viewer.html?id=${snapshotId}&url=${encodeURIComponent(url)}`;
+  window.open(viewerUrl, '_blank', 'width=1024,height=768,scrollbars=yes');
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
