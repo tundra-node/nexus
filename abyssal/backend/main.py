@@ -61,10 +61,10 @@ async def _seed_if_fresh():
     await asyncio.sleep(_SEED_DELAY_SECS)
 
     existing = await get_jobs()
-    if existing:
+    if existing["jobs"]:
         logger.info(
             "Database already has %d job(s) — skipping seed (not a fresh DB)",
-            len(existing),
+            existing["total"],
         )
         return
 

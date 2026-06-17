@@ -14,6 +14,11 @@ docker compose -f abyssal/docker-compose.yml up --build
 - `http://localhost` — Abyssal search engine (public)
 - `http://localhost/dashboard/` — Prism dashboard (private)
 
+## Requirements
+
+- **Linux host** — i2pd uses `network_mode: host` for proper LeaseSet publishing. This does NOT work on macOS Docker Desktop or Windows without WSL2 host networking support.
+- Docker Compose v2+
+
 ## Architecture
 
 | Service | What it does | Type |

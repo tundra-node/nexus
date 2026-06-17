@@ -115,11 +115,21 @@ async def count_snapshots_for_url(url: str) -> int:
     return rows[0]["cnt"] if rows else 0
 
 
-async def get_all_tracked_urls() -> list[dict]:
+async def get_all_tracked_urls(limit: int = 100, offset: int = 0) -> list[dict]:
     db = await get_db()
-    rows = await db.execute_fetchall("SELECT * FROM wayback_urls ORDER BY last_captured DESC")
+    rows = await db.execute_fetchall(
+        "SELECT * FROM wayback_urls ORDER BY last_captured DESC LIMIT ? OFFSET ?",
+        (limit, offset),
+    )
     await db.close()
     return [dict(r) for r in rows]
+
+
+async def count_tracked_urls() -> int:
+    db = await get_db()
+    rows = await db.execute_fetchall("SELECT COUNT(*) as cnt FROM wayback_urls")
+    await db.close()
+    return rows[0]["cnt"] if rows else 0
 
 
 async def get_tracked_url(url: str) -> Optional[dict]:

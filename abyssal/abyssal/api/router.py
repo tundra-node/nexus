@@ -80,8 +80,11 @@ async def get_site(hostname: str):
 
 
 @router.get("/site-status")
-async def site_status():
-    return await crawler_db.get_site_status()
+async def site_status(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+):
+    return await crawler_db.get_site_status(page=page, per_page=per_page)
 
 
 @router.get("/graph")
@@ -135,9 +138,13 @@ async def start_crawl(req: StartCrawlRequest, api_key: str = Header("")):
 
 
 @router.get("/crawl/jobs")
-async def list_jobs(api_key: str = Header("")):
+async def list_jobs(
+    api_key: str = Header(""),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+):
     await require_admin(api_key)
-    return await crawler_db.get_jobs()
+    return await crawler_db.get_jobs(page=page, per_page=per_page)
 
 
 @router.get("/crawl/jobs/{job_id}")
@@ -195,8 +202,13 @@ async def wayback_stats():
 
 
 @router.get("/wayback/urls")
-async def wayback_urls():
-    return await wb_db.get_all_tracked_urls()
+async def wayback_urls(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    urls = await wb_db.get_all_tracked_urls(limit=limit, offset=offset)
+    total = await wb_db.count_tracked_urls()
+    return {"urls": urls, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/wayback/snapshots")

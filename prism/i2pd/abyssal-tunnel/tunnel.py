@@ -82,12 +82,12 @@ def get_b32(dest_b64):
     return base64.b32encode(h).decode().lower().replace('=', '')
 
 
-def run_tunnel(cfg):
+def run_tunnel(cfg, shutdown: threading.Event):
     name = cfg["name"]
     bh = cfg["backend_host"]
     bp = cfg["backend_port"]
 
-    while True:
+    while not shutdown.is_set():
         notif_sock = None
         try:
             full_key = load_or_create_keys(name)
@@ -119,39 +119,47 @@ def run_tunnel(cfg):
 
                 notif_sock.settimeout(None)
                 buf = b""
-                while True:
-                    data = notif_sock.recv(4096)
-                    if not data:
+                while not shutdown.is_set():
+                    try:
+                        data = notif_sock.recv(4096)
+                        if not data:
+                            break
+                        buf += data
+                        while b"\n" in buf:
+                            line, buf = buf.split(b"\n", 1)
+                            line_s = line.decode().strip()
+                            if "STREAM STATUS" in line_s:
+                                sid = ""
+                                for part in line_s.split():
+                                    if part.startswith("STREAM="):
+                                        sid = part.split("=", 1)[1]
+                                if sid:
+                                    threading.Thread(
+                                        target=handle_stream,
+                                        args=(name, session_id, sid, bh, bp),
+                                        daemon=True,
+                                    ).start()
+                    except socket.timeout:
+                        continue
+                    except OSError:
                         break
-                    buf += data
-                    while b"\n" in buf:
-                        line, buf = buf.split(b"\n", 1)
-                        line_s = line.decode().strip()
-                        if "STREAM STATUS" in line_s:
-                            sid = ""
-                            for part in line_s.split():
-                                if part.startswith("STREAM="):
-                                    sid = part.split("=", 1)[1]
-                            if sid:
-                                threading.Thread(
-                                    target=handle_stream,
-                                    args=(name, session_id, sid, bh, bp),
-                                    daemon=True,
-                                ).start()
             else:
                 log.warning(f"[{name}] Session failed, retrying in 15s")
-                time.sleep(15)
+                shutdown.wait(15)
         except Exception as e:
             log.error(f"[{name}] Error: {e}")
-            time.sleep(5)
+            shutdown.wait(5)
         finally:
             if notif_sock:
                 try:
                     notif_sock.close()
                 except:
                     pass
-        log.info(f"[{name}] Reconnecting in 15s...")
-        time.sleep(15)
+        if not shutdown.is_set():
+            log.info(f"[{name}] Reconnecting in 15s...")
+            shutdown.wait(15)
+
+    log.info(f"[{name}] Tunnel stopped.")
 
 
 def handle_stream(name, session_id, sid, backend_host, backend_port):
@@ -248,8 +256,19 @@ def collect_and_write_tunnel_info():
 
 
 def main():
+    import signal
+
     log.info("Abyssal SAM Tunnel Service")
     log.info(f"SAM: {SAM_HOST}:{SAM_PORT}, Keys: {KEYS_DIR}")
+
+    shutdown = threading.Event()
+
+    def _handle_signal(signum, frame):
+        log.info("Received signal %d, shutting down...", signum)
+        shutdown.set()
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
 
     for attempt in range(60):
         try:
@@ -277,16 +296,17 @@ def main():
             log.info(f"Waiting backends... ({attempt + 1}/60)")
         time.sleep(2)
 
-    threads = [threading.Thread(target=run_tunnel, args=(t,), daemon=True) for t in TUNNELS]
+    threads = [threading.Thread(target=run_tunnel, args=(t, shutdown), daemon=True) for t in TUNNELS]
     for t in threads:
         t.start()
     log.info("All tunnels started")
 
     # Schedule periodic tunnel-info writes
     def write_loop():
-        while True:
-            time.sleep(30)
-            collect_and_write_tunnel_info()
+        while not shutdown.is_set():
+            shutdown.wait(30)
+            if not shutdown.is_set():
+                collect_and_write_tunnel_info()
 
     threading.Thread(target=write_loop, daemon=True).start()
 
@@ -294,8 +314,9 @@ def main():
     time.sleep(5)
     collect_and_write_tunnel_info()
 
-    while True:
-        time.sleep(60)
+    # Wait for shutdown signal
+    shutdown.wait()
+    log.info("Tunnel service stopped.")
 
 
 if __name__ == "__main__":

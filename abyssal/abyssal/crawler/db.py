@@ -132,11 +132,21 @@ async def create_job(url: str, max_pages: int = 0, max_depth: int = 5,
     return job_id
 
 
-async def get_jobs() -> list[dict]:
+async def get_jobs(page: int = 1, per_page: int = 50) -> dict:
+    offset = (page - 1) * per_page
     db = await get_db()
-    rows = await db.execute_fetchall("SELECT * FROM crawl_jobs ORDER BY created_at DESC")
+    total = (await db.execute_fetchall("SELECT COUNT(*) AS n FROM crawl_jobs"))[0]["n"]
+    rows = await db.execute_fetchall(
+        "SELECT * FROM crawl_jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        (per_page, offset),
+    )
     await db.close()
-    return [dict(r) for r in rows]
+    return {
+        "jobs": [dict(r) for r in rows],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
 
 
 async def get_job(job_id: int) -> Optional[dict]:
@@ -339,11 +349,21 @@ async def upsert_site_status(
     await db.close()
 
 
-async def get_site_status() -> list[dict]:
+async def get_site_status(page: int = 1, per_page: int = 50) -> dict:
+    offset = (page - 1) * per_page
     db = await get_db()
-    rows = await db.execute_fetchall("SELECT * FROM site_status ORDER BY last_crawled DESC")
+    total = (await db.execute_fetchall("SELECT COUNT(*) AS n FROM site_status"))[0]["n"]
+    rows = await db.execute_fetchall(
+        "SELECT * FROM site_status ORDER BY last_crawled DESC LIMIT ? OFFSET ?",
+        (per_page, offset),
+    )
     await db.close()
-    return [dict(r) for r in rows]
+    return {
+        "sites": [dict(r) for r in rows],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
 
 
 async def get_seen_hostnames() -> list[str]:
