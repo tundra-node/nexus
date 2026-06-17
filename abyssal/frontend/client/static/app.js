@@ -86,7 +86,10 @@ function route() {
 
 function navigate(url) { history.pushState(null, '', url); route(); }
 window.addEventListener('popstate', route);
-document.addEventListener('DOMContentLoaded', () => { ConnMonitor.init(); route(); });
+document.addEventListener('DOMContentLoaded', () => {
+  ConnMonitor.init();
+  try { route(); } catch(e) { document.getElementById('main').innerHTML = errorBox('Routing error: ' + e.message, () => route()); }
+});
 
 /* ── Page Rendering ─────────────────────────────────────────────────────── */
 
