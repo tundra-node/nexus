@@ -615,4 +615,22 @@ asyncio.run(r())
 curl -s http://localhost/api/abyssal/addressbook | python3 -c "import sys,json; r=json.load(sys.stdin); print('total:', r['total'])"
 # Expect: total > 0 (entries from registry added to site_status)
 ```
+
+## Testing
+
+See [PRECOMMIT.md](PRECOMMIT.md) for the full pre-commit checklist.
+
+### Quick Test Commands
+
+```sh
+# Run all tests (requires services running)
+cd ~/Developer/nexus
+python -m pytest tests/ -v
+
+# Syntax check only (no services needed)
+python -m py_compile tests/abyssal/test_api.py tests/prism/test_api.py
 ```
+
+### Test Files
+- `tests/abyssal/test_api.py` — 34 tests for Abyssal API (search, directory, wayback, addressbook, crawler admin)
+- `tests/prism/test_api.py` — 25 tests for Prism API (router, browser, addressbook, error handling)
