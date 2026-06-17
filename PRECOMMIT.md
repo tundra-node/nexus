@@ -38,6 +38,8 @@ docker compose up -d abyssal-frontend abyssal-backend
 
 **IMPORTANT:** If you change the backend API response format, you MUST also rebuild the frontend if the JS expects the new format. The frontend and backend are separate containers — rebuilding one does not affect the other.
 
+**Example:** Changed `/api/abyssal/wayback/urls` from returning a list to `{"urls": [...], "total": N}`. The frontend JS expects `urlsResp.urls` and `urlsResp.total`. If only the backend is rebuilt, the frontend still gets the old list format and shows "No URLs tracked yet." Must rebuild BOTH.
+
 ## 3. Run Tests
 
 ### Test File Syntax Check (no services needed)
