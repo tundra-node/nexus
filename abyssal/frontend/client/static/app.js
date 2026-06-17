@@ -183,7 +183,9 @@ function pageNav(page, total, cb) {
 
 function lastUpdated() { return `<div class="last-updated">Updated ${new Date().toLocaleTimeString()}</div>`; }
 
-function card(body) { return `<div class="card">${body}</div>`; }
+function outproxyUrl(hostname) {
+  return `https://anubis.techaro.lol/${hostname}`;
+}
 
 /* ── Prefetch ────────────────────────────────────────────────────────────── */
 
@@ -280,11 +282,20 @@ class HomePage {
       this.btn.disabled = false;
       if (!d.results || !d.results.length) { this.res.innerHTML = '<p>No results found. Try a broader query — the I2P index is still growing.</p>'; return; }
       this.res.innerHTML = d.results.map(r => {
-        const h = extractHostname(r.url);
-        return card(`<h3><a href="/site/${esc(h)}" data-prefetch>${highlight(r.title || h, q)}</a></h3>
-          <div class="meta">${esc(h)}${r.language ? ' · ' + esc(r.language) : ''}${r.site_type ? ' · <span class="badge type">' + esc(r.site_type) + '</span>' : ''}</div>
-          ${r.snippet ? `<div class="snippet">${r.snippet}</div>` : ''}
-          <div class="tags">${r.status_code ? `<span class="tag">HTTP ${r.status_code}</span>` : ''}</div>`);
+        const h = r.hostname || extractHostname(r.url);
+        const b32 = r.b32 ? `<span style="color:var(--dim);font-size:0.75rem">${esc(r.b32.slice(0,20))}…</span>` : '';
+        return `<div class="card site-card">
+          <div class="site-info" style="width:100%">
+            <h3><a href="/site/${esc(h)}" data-prefetch>${esc(h)}</a></h3>
+            <div class="site-meta">
+              ${r.language ? `<span class="badge type">${esc(r.language)}</span>` : ''}
+              ${r.site_type ? `<span class="badge type">${esc(r.site_type)}</span>` : ''}
+              ${b32}
+              <a href="${outproxyUrl(h)}" target="_blank" rel="noopener" style="color:var(--accent2);margin-left:auto" title="Visit via outproxy">◉ Live</a>
+            </div>
+            ${r.snippet ? `<div class="snippet" style="max-height:3.6em;overflow:hidden">${esc(r.snippet.replace(/<[^>]+>/g, '').slice(0, 200))}</div>` : ''}
+          </div>
+        </div>`;
       }).join('') + pageNav(page, d.total, (p) => this.search(p)) + lastUpdated();
     } catch (e) {
       this.btn.disabled = false;
@@ -324,6 +335,7 @@ class DirectoryPage {
               ${s.language ? `<span class="badge type">${esc(s.language)}</span>` : ''}
               ${s.site_type && s.site_type !== 'website' ? `<span class="badge type">${esc(s.site_type)}</span>` : ''}
               <span style="color:var(--dim)">${s.last_seen_online ? timeAgo(s.last_seen_online) : 'never seen'}</span>
+              <a href="${outproxyUrl(s.hostname)}" target="_blank" rel="noopener" style="color:var(--accent2)" title="Visit via outproxy">◉</a>
             </div>
           </div>
         </div>`;
@@ -345,18 +357,42 @@ class SiteDetailPage {
     try {
       const s = await api(`/sites/${encodeURIComponent(this.hostname)}`, {}, { cacheKey: 'site_' + this.hostname });
       const online = s.checks_online > s.checks_offline && s.checks_online > 0;
+      const totalChecks = (s.checks_online || 0) + (s.checks_offline || 0) + (s.checks_limited || 0);
+      const uptime = totalChecks > 0 ? Math.round((s.checks_online / totalChecks) * 100) : 0;
       sd.innerHTML = `
         <div class="card">
-          <div class="meta">
-            ${statusBadge(online)}
-            ${s.language ? `<span class="badge type">${esc(s.language)}</span>` : ''}
-            ${s.site_type ? `<span class="badge type">${esc(s.site_type)}</span>` : ''}
-            <span style="color:var(--dim)">${s.last_seen_online ? 'Last seen ' + timeAgo(s.last_seen_online) : 'Never seen online'}</span>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+            <div>
+              <div style="font-size:1.1rem;font-weight:600;margin-bottom:0.25rem">${esc(this.hostname)}</div>
+              <div class="meta">
+                ${statusBadge(online)}
+                ${s.language ? `<span class="badge type">${esc(s.language)}</span>` : ''}
+                ${s.site_type ? `<span class="badge type">${esc(s.site_type)}</span>` : ''}
+              </div>
+            </div>
+            <a href="${outproxyUrl(this.hostname)}" target="_blank" rel="noopener" style="padding:0.5rem 1rem;background:linear-gradient(135deg,var(--accent),#6a58d9);color:#fff;border-radius:var(--radius);font-size:0.85rem;font-weight:600;text-decoration:none;white-space:nowrap">◉ Visit Site</a>
           </div>
-          ${s.b32 ? `<div class="meta" style="word-break:break-all;margin-top:0.5rem;font-size:0.75rem;color:var(--dim)">b32: ${esc(s.b32)}</div>` : ''}
+          ${s.b32 ? `<div style="font-family:monospace;font-size:0.8rem;color:var(--dim);word-break:break-all;margin-bottom:1rem;padding:0.5rem;background:var(--bg3);border-radius:var(--radius)">${esc(s.b32)}</div>` : ''}
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;text-align:center">
+            <div style="padding:0.75rem;background:rgba(63,185,80,0.08);border-radius:var(--radius)">
+              <div style="font-size:1.5rem;font-weight:700;color:var(--green)">${s.checks_online || 0}</div>
+              <div style="font-size:0.75rem;color:var(--muted)">Times Up</div>
+            </div>
+            <div style="padding:0.75rem;background:rgba(248,81,73,0.08);border-radius:var(--radius)">
+              <div style="font-size:1.5rem;font-weight:700;color:var(--red)">${s.checks_offline || 0}</div>
+              <div style="font-size:0.75rem;color:var(--muted)">Times Down</div>
+            </div>
+            <div style="padding:0.75rem;background:rgba(210,153,34,0.08);border-radius:var(--radius)">
+              <div style="font-size:1.5rem;font-weight:700;color:var(--orange)">${s.checks_limited || 0}</div>
+              <div style="font-size:0.75rem;color:var(--muted)">Questionable</div>
+            </div>
+          </div>
+          <div style="margin-top:1rem;font-size:0.85rem;color:var(--muted)">
+            Uptime: <strong style="color:${uptime > 80 ? 'var(--green)' : uptime > 50 ? 'var(--orange)' : 'var(--red)'}">${uptime}%</strong>
+            ${s.last_seen_online ? ` · Last seen ${timeAgo(s.last_seen_online)}` : ''}
+            ${s.last_crawled ? ` · Last crawled ${timeAgo(s.last_crawled)}` : ''}
+          </div>
         </div>
-        <h2 style="margin-top:1.5rem">Pages (${s.pages ? s.pages.length : 0})</h2>
-        ${this.renderTree(s.page_tree || [])}
         ${lastUpdated()}`;
     } catch (e) { sd.innerHTML = errorBox(e.message, () => this.render()); }
   }

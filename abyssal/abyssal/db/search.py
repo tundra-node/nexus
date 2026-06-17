@@ -47,18 +47,43 @@ async def search_pages(
     rows = await db.execute_fetchall(
         f"SELECT p.id, p.url, p.title, p.description, p.language, p.site_type, "
         f"p.b32, p.address_helper, p.crawled_at, p.status_code, "
-        f"rank "
+        f"rank, SUBSTR(p.url, INSTR(p.url, '://') + 3) AS hostname "
         f"FROM pages_fts "
         f"JOIN crawled_pages p ON pages_fts.rowid = p.id "
         f"WHERE {where} "
         f"ORDER BY rank "
         f"LIMIT ? OFFSET ?",
-        params + [per_page, offset],
+        params + [per_page * 3, offset],  # fetch extra for dedup
     )
 
-    results = []
+    # Deduplicate by hostname, keep best-ranked page per site
+    seen_hosts = {}
     for r in rows:
+        host = r["hostname"].split("/")[0]  # strip path
+        if host not in seen_hosts:
+            seen_hosts[host] = r
+
+    # Sort: hostname match first, then by rank
+    query_lower = q.lower().replace(".i2p", "").replace("http://", "").replace("https://", "").strip()
+    def sort_key(item):
+        r = item[1]
+        host = r["hostname"].split("/")[0].lower()
+        # Boost if hostname contains query
+        host_match = 0 if query_lower in host else 1
+        # Boost if hostname starts with query
+        starts_with = 0 if host.startswith(query_lower) else 1
+        return (host_match, starts_with, r["rank"])
+
+    sorted_hosts = sorted(seen_hosts.items(), key=sort_key)
+    total_unique = len(seen_hosts)
+
+    # Paginate after dedup
+    page_results = sorted_hosts[(page-1)*per_page : page*per_page]
+
+    results = []
+    for host, r in page_results:
         result = dict(r)
+        result["hostname"] = host
         snippet = await _get_snippet(db, r["id"], q)
         result["snippet"] = snippet
         results.append(result)
@@ -67,10 +92,10 @@ async def search_pages(
 
     return {
         "results": results,
-        "total": total,
+        "total": total_unique,
         "page": page,
         "per_page": per_page,
-        "total_pages": max(1, (total + per_page - 1) // per_page) if total > 0 else 0,
+        "total_pages": max(1, (total_unique + per_page - 1) // per_page) if total_unique > 0 else 0,
     }
 
 
