@@ -12,10 +12,23 @@ import os
 import httpx
 import pytest
 
-ROUTER_URL = os.getenv("PRISM_ROUTER_URL", "http://localhost:8001")
+def _get_url(env_var, host_port, docker_name):
+    url = os.getenv(env_var, f"http://localhost:{host_port}")
+    try:
+        httpx.get(f"{url}/health", timeout=2)
+        return url
+    except Exception:
+        docker_url = f"http://{docker_name}:8001" if "router" in env_var else f"http://{docker_name}:{host_port}"
+        try:
+            httpx.get(f"{docker_url}/health", timeout=2)
+            return docker_url
+        except Exception:
+            return url
+
+ROUTER_URL = _get_url("PRISM_ROUTER_URL", 8001, "prism-router")
 BROWSER_URL = os.getenv("PRISM_BROWSER_URL", "http://localhost:8002")
 ADDRESSBOOK_URL = os.getenv("PRISM_ADDRESSBOOK_URL", "http://localhost:8005")
-API_KEY = os.environ.get("API_KEY", "dev-key-12345")
+API_KEY = "dev-key-12345"
 
 
 # --- Router Service ---

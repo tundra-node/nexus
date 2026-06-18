@@ -12,7 +12,26 @@ import os
 import httpx
 import pytest
 
-BASE_URL = os.getenv("ABYSSAL_URL", "http://localhost:8000")
+# Try host-mapped port first, then Docker network name
+def _get_abyssal_url():
+    # Check if host port 80 is reachable (nginx proxy)
+    host_url = os.getenv("ABYSSAL_URL", "http://localhost")
+    try:
+        httpx.get(f"{host_url}/api/abyssal/sites?page=1&per_page=1", timeout=2)
+        return host_url
+    except Exception:
+        pass
+    # Fall back to Docker network name
+    docker_url = "http://abyssal-backend:8000"
+    try:
+        httpx.get(f"{docker_url}/api/abyssal/sites?page=1&per_page=1", timeout=2)
+        return docker_url
+    except Exception:
+        pass
+    # Default to host URL for error messages
+    return host_url
+
+BASE_URL = _get_abyssal_url()
 API = f"{BASE_URL}/api/abyssal"
 API_KEY = os.getenv("API_KEY", "dev-key-12345")
 
