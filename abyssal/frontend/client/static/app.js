@@ -378,6 +378,27 @@ class SiteDetailPage {
       const online = s.checks_online > s.checks_offline && s.checks_online > 0;
       const totalChecks = (s.checks_online || 0) + (s.checks_offline || 0) + (s.checks_limited || 0);
       const uptime = totalChecks > 0 ? Math.round((s.checks_online / totalChecks) * 100) : 0;
+
+      // Fetch snapshots for this site
+      const url = `http://${this.hostname}/`;
+      const snaps = await api(`/wayback/snapshots?url=${encodeURIComponent(url)}&limit=50`, {}, { cacheKey: 'snaps_' + this.hostname }).catch(() => ({snapshots:[],total:0}));
+
+      let snapshotsHtml = '';
+      if (snaps.snapshots && snaps.snapshots.length > 0) {
+        snapshotsHtml = `<div class="card" style="margin-top:1rem">
+          <h2 style="margin-bottom:0.75rem">Wayback Snapshots (${snaps.total})</h2>
+          ${snaps.snapshots.map(snap => `
+            <div style="display:flex;align-items:center;gap:0.75rem;padding:0.4rem 0;border-bottom:1px solid var(--border);font-size:0.85rem">
+              <span style="color:${snap.status_code === 200 ? 'var(--green)' : 'var(--orange)'}">HTTP ${snap.status_code}</span>
+              <span style="color:var(--dim);flex:1">${snap.snapshot_time || ''}</span>
+              ${snap.size_bytes ? `<span style="color:var(--dim)">${formatBytes(snap.size_bytes)}</span>` : ''}
+              <a href="#" onclick="window.open('/viewer.html?id=${snap.id}&url=${encodeURIComponent(url)}','_blank','width=1024,height=768');return false" style="padding:0.2rem 0.5rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-size:0.75rem;text-decoration:none;color:var(--text)">View</a>
+            </div>`).join('')}
+        </div>`;
+      } else {
+        snapshotsHtml = `<div class="card" style="margin-top:1rem"><p style="color:var(--muted)">No snapshots yet. The crawler will archive pages as it discovers them.</p></div>`;
+      }
+
       sd.innerHTML = `
         <div class="card">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
@@ -389,29 +410,33 @@ class SiteDetailPage {
                 ${s.site_type ? `<span class="badge type">${esc(s.site_type)}</span>` : ''}
               </div>
             </div>
-            <a href="${outproxyUrl(this.hostname)}" target="_blank" rel="noopener" style="padding:0.5rem 1rem;background:linear-gradient(135deg,var(--accent),#6a58d9);color:#fff;border-radius:var(--radius);font-size:0.85rem;font-weight:600;text-decoration:none;white-space:nowrap">◉ Visit Site</a>
-          </div>
-          ${s.b32 ? `<div style="font-family:monospace;font-size:0.8rem;color:var(--dim);word-break:break-all;margin-bottom:1rem;padding:0.5rem;background:var(--bg3);border-radius:var(--radius)">${esc(s.b32)}</div>` : ''}
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;text-align:center">
-            <div style="padding:0.75rem;background:rgba(63,185,80,0.08);border-radius:var(--radius)">
-              <div style="font-size:1.5rem;font-weight:700;color:var(--green)">${s.checks_online || 0}</div>
-              <div style="font-size:0.75rem;color:var(--muted)">Times Up</div>
-            </div>
-            <div style="padding:0.75rem;background:rgba(248,81,73,0.08);border-radius:var(--radius)">
-              <div style="font-size:1.5rem;font-weight:700;color:var(--red)">${s.checks_offline || 0}</div>
-              <div style="font-size:0.75rem;color:var(--muted)">Times Down</div>
-            </div>
-            <div style="padding:0.75rem;background:rgba(210,153,34,0.08);border-radius:var(--radius)">
-              <div style="font-size:1.5rem;font-weight:700;color:var(--orange)">${s.checks_limited || 0}</div>
-              <div style="font-size:0.75rem;color:var(--muted)">Questionable</div>
+            <div style="display:flex;gap:0.5rem;flex-shrink:0">
+              <a href="https://anubis.techaro.lol/${encodeURIComponent(this.hostname)}" target="_blank" rel="noopener" style="padding:0.4rem 0.8rem;background:linear-gradient(135deg,var(--accent),#6a58d9);color:#fff;border-radius:var(--radius);font-size:0.8rem;font-weight:600;text-decoration:none">◉ Live Preview</a>
             </div>
           </div>
-          <div style="margin-top:1rem;font-size:0.85rem;color:var(--muted)">
+          ${s.b32 ? `<div style="font-family:monospace;font-size:0.75rem;color:var(--dim);word-break:break-all;margin-bottom:1rem;padding:0.5rem;background:var(--bg3);border-radius:var(--radius)">b32: ${esc(s.b32)}</div>` : ''}
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem;text-align:center">
+            <div style="padding:0.6rem;background:rgba(63,185,80,0.08);border-radius:var(--radius)">
+              <div style="font-size:1.25rem;font-weight:700;color:var(--green)">${s.checks_online || 0}</div>
+              <div style="font-size:0.7rem;color:var(--muted)">Times Up</div>
+            </div>
+            <div style="padding:0.6rem;background:rgba(248,81,73,0.08);border-radius:var(--radius)">
+              <div style="font-size:1.25rem;font-weight:700;color:var(--red)">${s.checks_offline || 0}</div>
+              <div style="font-size:0.7rem;color:var(--muted)">Times Down</div>
+            </div>
+            <div style="padding:0.6rem;background:rgba(210,153,34,0.08);border-radius:var(--radius)">
+              <div style="font-size:1.25rem;font-weight:700;color:var(--orange)">${s.checks_limited || 0}</div>
+              <div style="font-size:0.7rem;color:var(--muted)">Questionable</div>
+            </div>
+          </div>
+          <div style="margin-top:0.75rem;font-size:0.8rem;color:var(--muted)">
             Uptime: <strong style="color:${uptime > 80 ? 'var(--green)' : uptime > 50 ? 'var(--orange)' : 'var(--red)'}">${uptime}%</strong>
             ${s.last_seen_online ? ` · Last seen ${timeAgo(s.last_seen_online)}` : ''}
             ${s.last_crawled ? ` · Last crawled ${timeAgo(s.last_crawled)}` : ''}
+            · ${s.pages ? s.pages.length : 0} pages indexed
           </div>
         </div>
+        ${snapshotsHtml}
         ${lastUpdated()}`;
     } catch (e) { sd.innerHTML = errorBox(e.message, () => this.render()); }
   }
