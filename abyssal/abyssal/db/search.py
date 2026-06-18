@@ -25,8 +25,6 @@ async def search_pages(
     conditions = ["pages_fts MATCH ?"]
     params = [q]
 
-    fts_cols = "title, content, description, keywords"
-
     if language:
         conditions.append("p.language = ?")
         params.append(language)
@@ -36,30 +34,33 @@ async def search_pages(
 
     where = " AND ".join(conditions)
 
-    count_row = await db.execute_fetchall(
-        f"SELECT COUNT(*) as total FROM pages_fts "
-        f"JOIN crawled_pages p ON pages_fts.rowid = p.id "
-        f"WHERE {where}",
-        params,
-    )
-    total = count_row[0]["total"] if count_row else 0
-
+    # Get pages with site_status join for stats
     rows = await db.execute_fetchall(
         f"SELECT p.id, p.url, p.title, p.description, p.language, p.site_type, "
         f"p.b32, p.address_helper, p.crawled_at, p.status_code, "
-        f"rank, SUBSTR(p.url, INSTR(p.url, '://') + 3) AS hostname "
+        f"rank, "
+        f"CASE "
+        f"  WHEN INSTR(SUBSTR(p.url, INSTR(p.url, '://') + 3), '/') > 0 "
+        f"  THEN SUBSTR(SUBSTR(p.url, INSTR(p.url, '://') + 3), 1, INSTR(SUBSTR(p.url, INSTR(p.url, '://') + 3), '/') - 1) "
+        f"  ELSE SUBSTR(p.url, INSTR(p.url, '://') + 3) "
+        f"END AS hostname, "
+        f"COALESCE(s.checks_online, 0) AS checks_online, "
+        f"COALESCE(s.checks_offline, 0) AS checks_offline, "
+        f"COALESCE(s.checks_limited, 0) AS checks_limited, "
+        f"s.last_seen_online "
         f"FROM pages_fts "
         f"JOIN crawled_pages p ON pages_fts.rowid = p.id "
+        f"LEFT JOIN site_status s ON s.hostname = CASE WHEN INSTR(SUBSTR(p.url, INSTR(p.url, '://') + 3), '/') > 0 THEN SUBSTR(SUBSTR(p.url, INSTR(p.url, '://') + 3), 1, INSTR(SUBSTR(p.url, INSTR(p.url, '://') + 3), '/') - 1) ELSE SUBSTR(p.url, INSTR(p.url, '://') + 3) END "
         f"WHERE {where} "
         f"ORDER BY rank "
         f"LIMIT ? OFFSET ?",
-        params + [per_page * 3, offset],  # fetch extra for dedup
+        params + [per_page * 3, offset],
     )
 
     # Deduplicate by hostname, keep best-ranked page per site
     seen_hosts = {}
     for r in rows:
-        host = r["hostname"].split("/")[0]  # strip path
+        host = r["hostname"].split("/")[0]
         if host not in seen_hosts:
             seen_hosts[host] = r
 
@@ -68,16 +69,13 @@ async def search_pages(
     def sort_key(item):
         r = item[1]
         host = r["hostname"].split("/")[0].lower()
-        # Boost if hostname contains query
         host_match = 0 if query_lower in host else 1
-        # Boost if hostname starts with query
         starts_with = 0 if host.startswith(query_lower) else 1
         return (host_match, starts_with, r["rank"])
 
     sorted_hosts = sorted(seen_hosts.items(), key=sort_key)
     total_unique = len(seen_hosts)
 
-    # Paginate after dedup
     page_results = sorted_hosts[(page-1)*per_page : page*per_page]
 
     results = []

@@ -184,7 +184,9 @@ function pageNav(page, total, cb) {
 function lastUpdated() { return `<div class="last-updated">Updated ${new Date().toLocaleTimeString()}</div>`; }
 
 function outproxyUrl(hostname) {
-  return `https://anubis.techaro.lol/${hostname}`;
+  // No reliable clearnet-to-i2p outproxy exists.
+  // Return a search query so users can find how to connect.
+  return `https://geti2p.net/en/about/browser-config`;
 }
 
 /* ── Prefetch ────────────────────────────────────────────────────────────── */
@@ -283,17 +285,34 @@ class HomePage {
       if (!d.results || !d.results.length) { this.res.innerHTML = '<p>No results found. Try a broader query — the I2P index is still growing.</p>'; return; }
       this.res.innerHTML = d.results.map(r => {
         const h = r.hostname || extractHostname(r.url);
-        const b32 = r.b32 ? `<span style="color:var(--dim);font-size:0.75rem">${esc(r.b32.slice(0,20))}…</span>` : '';
-        return `<div class="card site-card">
-          <div class="site-info" style="width:100%">
-            <h3><a href="/site/${esc(h)}" data-prefetch>${esc(h)}</a></h3>
-            <div class="site-meta">
-              ${r.language ? `<span class="badge type">${esc(r.language)}</span>` : ''}
-              ${r.site_type ? `<span class="badge type">${esc(r.site_type)}</span>` : ''}
-              ${b32}
-              <a href="${outproxyUrl(h)}" target="_blank" rel="noopener" style="color:var(--accent2);margin-left:auto" title="Visit via outproxy">◉ Live</a>
+        const up = r.checks_online || 0;
+        const down = r.checks_offline || 0;
+        const questionable = r.checks_limited || 0;
+        const total = up + down + questionable;
+        const uptime = total > 0 ? Math.round((up / total) * 100) : 0;
+        const desc = r.description ? esc(r.description.slice(0, 150)) : '';
+        const lastSeen = r.last_seen_online ? timeAgo(r.last_seen_online) : 'never';
+        return `<div class="card">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem">
+            <div style="flex:1;min-width:0">
+              <h3 style="margin-bottom:0.25rem"><a href="/site/${esc(h)}" data-prefetch>${esc(h)}</a></h3>
+              <div class="meta" style="margin-bottom:0.4rem">
+                ${r.language ? `<span class="badge type">${esc(r.language)}</span>` : ''}
+                ${r.site_type ? `<span class="badge type">${esc(r.site_type)}</span>` : ''}
+                ${r.b32 ? `<span style="font-size:0.7rem;color:var(--dim)">${esc(r.b32.slice(0,16))}…</span>` : ''}
+              </div>
+              ${desc ? `<div style="font-size:0.85rem;color:var(--muted);margin-bottom:0.4rem">${desc}</div>` : ''}
+              <div style="font-size:0.75rem;color:var(--dim)">
+                <span style="color:var(--green)">↑${up}</span> /
+                <span style="color:var(--red)">↓${down}</span> /
+                <span style="color:var(--orange)">~${questionable}</span>
+                · <span style="color:${uptime > 80 ? 'var(--green)' : uptime > 50 ? 'var(--orange)' : 'var(--red)'}">${uptime}% up</span>
+                · ${lastSeen}
+              </div>
             </div>
-            ${r.snippet ? `<div class="snippet" style="max-height:3.6em;overflow:hidden">${esc(r.snippet.replace(/<[^>]+>/g, '').slice(0, 200))}</div>` : ''}
+            <div style="display:flex;flex-direction:column;gap:0.4rem;flex-shrink:0">
+              <a href="/site/${esc(h)}" style="padding:0.3rem 0.6rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-size:0.75rem;text-decoration:none;color:var(--text)">Details</a>
+            </div>
           </div>
         </div>`;
       }).join('') + pageNav(page, d.total, (p) => this.search(p)) + lastUpdated();

@@ -333,6 +333,36 @@ async def get_config(api_key: Optional[str] = Header(None, alias="x-api-key")):
     return {"poll_interval": POLL_INTERVAL, "api_version": "1.0.0"}
 
 
+# ── Stub endpoints for Abyssal crawler (proxied through Prism nginx) ──
+# The Prism React dashboard expects these endpoints. They're handled by
+# the Abyssal backend directly, but when accessed through Prism's /api/
+# prefix they hit this router. Return safe empty responses.
+
+@app.get("/api/crawl/jobs")
+async def crawl_jobs_stub(api_key: Optional[str] = Header(None, alias="x-api-key")):
+    return {"jobs": [], "total": 0, "page": 1, "per_page": 50}
+
+@app.post("/api/crawl/start")
+async def crawl_start_stub(api_key: Optional[str] = Header(None, alias="x-api-key")):
+    return {"job_id": 0, "status": "not_available"}
+
+@app.get("/api/crawl/jobs/{job_id}")
+async def crawl_job_stub(job_id: int, api_key: Optional[str] = Header(None, alias="x-api-key")):
+    return {"id": job_id, "status": "unknown", "url": "", "max_pages": 0, "max_depth": 0, "pages_crawled": 0}
+
+@app.post("/api/crawl/jobs/{job_id}/pause")
+async def crawl_pause_stub(job_id: int, api_key: Optional[str] = Header(None, alias="x-api-key")):
+    return {"status": "paused"}
+
+@app.post("/api/crawl/jobs/{job_id}/resume")
+async def crawl_resume_stub(job_id: int, api_key: Optional[str] = Header(None, alias="x-api-key")):
+    return {"status": "resumed"}
+
+@app.post("/api/crawl/jobs/{job_id}/rerun")
+async def crawl_rerun_stub(job_id: int, api_key: Optional[str] = Header(None, alias="x-api-key")):
+    return {"job_id": 0, "status": "not_available"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
