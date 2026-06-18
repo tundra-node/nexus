@@ -162,7 +162,19 @@ function safeId(s) { return 'id-' + String(s).replace(/[^a-zA-Z0-9_-]/g, '_').sl
 function statusBadge(online) { return `<span class="badge ${online ? 'online' : 'offline'}">${online ? 'Online' : 'Offline'}</span>`; }
 function extractHostname(url) { try { return new URL(url).hostname; } catch (_) { return url; } }
 function formatBytes(n) { if (!n) return '0 B'; const u = ['B','KB','MB','GB']; let i = 0; while (n >= 1024 && i < u.length-1) { n /= 1024; i++; } return n.toFixed(1) + ' ' + u[i]; }
-function timeAgo(iso) { if (!iso) return 'never'; const d = new Date(iso); const s = Math.floor((Date.now() - d.getTime()) / 1000); if (s < 60) return 'just now'; if (s < 3600) return Math.floor(s/60) + 'm ago'; if (s < 86400) return Math.floor(s/3600) + 'h ago'; return Math.floor(s/86400) + 'd ago'; }
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'unknown';
+    const s = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (s < 0) return 'just now';
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s/60) + 'm ago';
+    if (s < 86400) return Math.floor(s/3600) + 'h ago';
+    return Math.floor(s/86400) + 'd ago';
+  } catch(_) { return 'unknown'; }
+}
 
 function highlight(text, query) {
   if (!query) return esc(text);
@@ -381,7 +393,10 @@ class SiteDetailPage {
 
       // Fetch snapshots for this site
       const url = `http://${this.hostname}/`;
-      const snaps = await api(`/wayback/snapshots?url=${encodeURIComponent(url)}&limit=50`, {}, { cacheKey: 'snaps_' + this.hostname }).catch(() => ({snapshots:[],total:0}));
+      let snaps = {snapshots:[],total:0};
+      try {
+        snaps = await api(`/wayback/snapshots?url=${encodeURIComponent(url)}&limit=50`, {}, { cacheKey: 'snaps_' + this.hostname });
+      } catch(e) { console.warn('Snapshots fetch failed:', e.message); }
 
       let snapshotsHtml = '';
       if (snaps.snapshots && snaps.snapshots.length > 0) {
@@ -410,9 +425,7 @@ class SiteDetailPage {
                 ${s.site_type ? `<span class="badge type">${esc(s.site_type)}</span>` : ''}
               </div>
             </div>
-            <div style="display:flex;gap:0.5rem;flex-shrink:0">
-              <a href="https://anubis.techaro.lol/${encodeURIComponent(this.hostname)}" target="_blank" rel="noopener" style="padding:0.4rem 0.8rem;background:linear-gradient(135deg,var(--accent),#6a58d9);color:#fff;border-radius:var(--radius);font-size:0.8rem;font-weight:600;text-decoration:none">◉ Live Preview</a>
-            </div>
+            <a href="https://anubis.techaro.lol/${encodeURIComponent(this.hostname)}" target="_blank" rel="noopener" style="padding:0.4rem 0.8rem;background:linear-gradient(135deg,var(--accent),#6a58d9);color:#fff;border-radius:var(--radius);font-size:0.8rem;font-weight:600;text-decoration:none;white-space:nowrap">◉ Live Preview</a>
           </div>
           ${s.b32 ? `<div style="font-family:monospace;font-size:0.75rem;color:var(--dim);word-break:break-all;margin-bottom:1rem;padding:0.5rem;background:var(--bg3);border-radius:var(--radius)">b32: ${esc(s.b32)}</div>` : ''}
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem;text-align:center">
@@ -430,7 +443,7 @@ class SiteDetailPage {
             </div>
           </div>
           <div style="margin-top:0.75rem;font-size:0.8rem;color:var(--muted)">
-            Uptime: <strong style="color:${uptime > 80 ? 'var(--green)' : uptime > 50 ? 'var(--orange)' : 'var(--red)'}">${uptime}%</strong>
+            Uptime: <strong style="color:${uptime > 80 ? 'var(--green)' : uptime > 50 ? 'var(--orange)' : 'var('}">${uptime}%</strong>
             ${s.last_seen_online ? ` · Last seen ${timeAgo(s.last_seen_online)}` : ''}
             ${s.last_crawled ? ` · Last crawled ${timeAgo(s.last_crawled)}` : ''}
             · ${s.pages ? s.pages.length : 0} pages indexed
@@ -438,7 +451,10 @@ class SiteDetailPage {
         </div>
         ${snapshotsHtml}
         ${lastUpdated()}`;
-    } catch (e) { sd.innerHTML = errorBox(e.message, () => this.render()); }
+    } catch (e) {
+      console.error('SiteDetail render error:', e);
+      sd.innerHTML = errorBox('Failed to load site: ' + e.message, () => this.render());
+    }
   }
 
   renderTree(nodes) {
