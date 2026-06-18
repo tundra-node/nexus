@@ -340,7 +340,7 @@ async def get_config(api_key: Optional[str] = Header(None, alias="x-api-key")):
 
 @app.get("/api/crawl/jobs")
 async def crawl_jobs_stub(api_key: Optional[str] = Header(None, alias="x-api-key")):
-    return {"jobs": [], "total": 0, "page": 1, "per_page": 50}
+    return []
 
 @app.post("/api/crawl/start")
 async def crawl_start_stub(api_key: Optional[str] = Header(None, alias="x-api-key")):

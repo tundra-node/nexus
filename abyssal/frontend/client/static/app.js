@@ -185,12 +185,14 @@ function highlight(text, query) {
 function pageNav(page, total, cb) {
   const last = Math.ceil(total / PER_PAGE);
   if (last <= 1) return '';
-  const d = document.createElement('div');
-  d.className = 'pagination';
-  d.innerHTML = `<button class="prev" ${page <= 1 ? 'disabled' : ''}>← Prev</button><span>Page ${page} of ${last}</span><button class="next" ${page >= last ? 'disabled' : ''}>Next →</button>`;
-  d.querySelector('.prev').onclick = () => cb(page - 1);
-  d.querySelector('.next').onclick = () => cb(page + 1);
-  return d.outerHTML;
+  // Store callback globally so inline onclick can find it
+  const cbId = 'pgcb_' + page + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  window[cbId] = cb;
+  return `<div class="pagination">
+    <button class="prev" ${page <= 1 ? 'disabled' : ''} onclick="window['${cbId}']&&window['${cbId}'](${page - 1})">← Prev</button>
+    <span>Page ${page} of ${last}</span>
+    <button class="next" ${page >= last ? 'disabled' : ''} onclick="window['${cbId}']&&window['${cbId}'](${page + 1})">Next →</button>
+  </div>`;
 }
 
 function lastUpdated() { return `<div class="last-updated">Updated ${new Date().toLocaleTimeString()}</div>`; }
