@@ -1,19 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Search, Filter, Globe, ExternalLink, Loader2 } from 'lucide-react'
 import { search, getFacets, type SearchResult, type Facets } from '../hooks/useAbyssalApi'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 export default function SearchPage() {
-  const [query, setQuery] = useState('')
+  const [params] = useSearchParams()
+  const [query, setQuery] = useState(params.get('q') || '')
   const [results, setResults] = useState<SearchResult[]>([])
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [facets, setFacets] = useState<Facets | null>(null)
-  const [langFilter, setLangFilter] = useState('')
-  const [typeFilter, setTypeFilter] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
+  const [langFilter, setLangFilter] = useState(params.get('lang') || '')
+  const [typeFilter, setTypeFilter] = useState(params.get('type') || '')
+  const [showFilters, setShowFilters] = useState(params.get('filters') === '1')
   const [bookmarks, setBookmarks] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('abyssal-bookmarks') || '[]') }
     catch { return [] }
@@ -27,12 +28,12 @@ export default function SearchPage() {
     localStorage.setItem('abyssal-bookmarks', JSON.stringify(bookmarks))
   }, [bookmarks])
 
-  const doSearch = useCallback(async (p = 1) => {
-    if (!query.trim()) return
+  const doSearch = useCallback(async (p = 1, term = query) => {
+    if (!term.trim()) return
     setLoading(true)
     setPage(p)
     try {
-      const data = await search(query.trim(), langFilter, typeFilter, p)
+      const data = await search(term.trim(), langFilter, typeFilter, p)
       setResults(data.results)
       setTotal(data.total)
       setTotalPages(data.total_pages)
@@ -42,6 +43,17 @@ export default function SearchPage() {
     }
     setLoading(false)
   }, [query, langFilter, typeFilter])
+
+  // Deep link support: /?q=tunnel&type=docs&filters=1 runs the search on load
+  // and on any change to the URL, so a search is shareable as a plain link.
+  useEffect(() => {
+    const q = params.get('q')
+    if (!q) return
+    setQuery(q)
+    void doSearch(1, q)
+    // doSearch changes with the filters, which are read from the URL too
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
