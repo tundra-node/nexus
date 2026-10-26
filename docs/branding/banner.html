@@ -1,0 +1,133 @@
+<!doctype html>
+<!--
+  Nexus banner source. Render with any Chromium at 2400 wide:
+    "BrowserOS neo" --headless=new --hide-scrollbars --force-device-scale-factor=1 \
+      --window-size=2400,1200 --screenshot=out.png banner.html
+  1200 tall is 2:1, 1350 is 16:9, 800 is 3:1. Everything is sized in vw so any
+  height works; 2400 by 1200 is the reference.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #060d18; }
+  /* 1rem = 1% of the canvas width, so every label scales with the banner */
+  html { font-size: 1vw; }
+  body {
+    font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .stage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    align-items: center;
+    gap: 4.5%;
+    padding: 0 7%;
+    background:
+      radial-gradient(60% 55% at 12% 18%, rgba(34, 211, 238, 0.16), transparent 70%),
+      radial-gradient(55% 60% at 88% 82%, rgba(59, 130, 246, 0.18), transparent 70%),
+      linear-gradient(160deg, #0a1628 0%, #060d18 58%, #07101d 100%);
+  }
+  .grain {
+    position: absolute; inset: 0; opacity: 0.5;
+    background-image:
+      radial-gradient(rgba(148, 163, 184, 0.16) 1px, transparent 1px);
+    background-size: 46px 46px;
+    mask-image: radial-gradient(75% 75% at 50% 50%, black, transparent 78%);
+    -webkit-mask-image: radial-gradient(75% 75% at 50% 50%, black, transparent 78%);
+  }
+  .copy { position: relative; z-index: 2; }
+  .eyebrow {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 1.15rem;
+    letter-spacing: 0.42em;
+    text-transform: uppercase;
+    color: #22d3ee;
+    opacity: 0.85;
+    margin-bottom: 3.2%;
+  }
+  h1 {
+    font-size: 8.6vw;
+    line-height: 0.92;
+    letter-spacing: -0.035em;
+    font-weight: 800;
+    background: linear-gradient(115deg, #ffffff 8%, #a5f3fc 42%, #38bdf8 78%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .tagline {
+    font-size: 1.88rem;
+    line-height: 1.42;
+    color: #9aa8bd;
+    margin-top: 3.4%;
+    max-width: 24ch;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 6%; }
+  .chip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 1.02rem;
+    color: #a5f3fc;
+    border: 1px solid rgba(34, 211, 238, 0.32);
+    background: rgba(8, 47, 73, 0.42);
+    border-radius: 999px;
+    padding: 0.5rem 1.05rem;
+    white-space: nowrap;
+  }
+  .shot { position: relative; z-index: 2; }
+  .frame {
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    box-shadow: 0 34px 80px -24px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(34, 211, 238, 0.08) inset;
+    overflow: hidden;
+    background: #0a1628;
+  }
+  .bar {
+    display: flex; align-items: center; gap: 0.55rem;
+    padding: 0.85rem 1.1rem;
+    background: #0d1b30;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  }
+  .dot { width: 0.72rem; height: 0.72rem; border-radius: 999px; }
+  .d1 { background: #f87171; } .d2 { background: #fbbf24; } .d3 { background: #34d399; }
+  .url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.82rem; color: #64748b; margin-left: 0.6rem;
+  }
+  img { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="grain"></div>
+    <div class="copy">
+      <div class="eyebrow">I2P toolkit</div>
+      <h1>Nexus</h1>
+      <p class="tagline">A search engine for I2P and a dashboard for the router that runs it.</p>
+      <div class="chips">
+        <span class="chip">SQLite FTS5 index</span>
+        <span class="chip">Wayback archive</span>
+        <span class="chip">Link graph</span>
+        <span class="chip">i2pd dashboard</span>
+      </div>
+    </div>
+    <div class="shot">
+      <div class="frame">
+        <div class="bar">
+          <span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span>
+          <span class="url">abyssal / search?q=tunnel</span>
+        </div>
+        <img src="../screenshots/search.png" alt="">
+      </div>
+    </div>
+  </div>
+</body>
+</html>
