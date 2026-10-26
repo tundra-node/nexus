@@ -7,3 +7,8 @@ __pycache__/
 .opencode/
 -w
 .wakatime-project
+
+# local run state: crawler DB, snapshots, i2pd datadir, logs
+.local/
+.venv/
+*.egg-info/
