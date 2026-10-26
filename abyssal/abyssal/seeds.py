@@ -11,7 +11,7 @@ SEED_URLS = [
 ]
 
 # Per-seed crawl settings
-SEED_MAX_PAGES = 0       # 0 = unlimited
-SEED_MAX_DEPTH = 5
-SEED_CONCURRENCY = 10
+SEED_MAX_PAGES = 200     # 0 = unlimited, which is how a seed crawl eats the network
+SEED_MAX_DEPTH = 3
+SEED_CONCURRENCY = 3
 SEED_DELAY = 2.0

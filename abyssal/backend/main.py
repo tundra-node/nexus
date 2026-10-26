@@ -24,6 +24,11 @@ from abyssal.wayback.db import init_wayback_db
 from abyssal.crawler.scheduler import start_scheduler
 from abyssal.resolver.resolver import resolve_host
 from abyssal.seeds import SEED_URLS, SEED_MAX_PAGES, SEED_MAX_DEPTH, SEED_CONCURRENCY, SEED_DELAY
+from abyssal.config import (
+    AUTOSEED_ENABLED,
+    REGISTRY_CRAWLER_ENABLED,
+    SCHEDULER_ENABLED,
+)
 
 # Seconds to wait after startup before seeding, to give i2pd time to bootstrap.
 # Only runs on a genuinely fresh database (zero jobs). Has no effect on restarts.
@@ -97,25 +102,37 @@ async def startup():
         logger.warning("Could not init wayback DB: %s", e)
 
     # Resume any orphaned jobs before seeding
-    await _resume_orphaned_jobs()
+    if AUTOSEED_ENABLED:
+        await _resume_orphaned_jobs()
+    else:
+        logger.info("AUTOSEED_ENABLED is off — not resuming orphaned jobs")
 
     # Background task — does not block startup or nginx
-    asyncio.create_task(_seed_if_fresh())
+    if AUTOSEED_ENABLED:
+        asyncio.create_task(_seed_if_fresh())
+    else:
+        logger.info("AUTOSEED_ENABLED is off — skipping seed crawls")
 
-    try:
-        start_scheduler()
-        logger.info("Auto-recrawl scheduler started")
-    except Exception as e:
-        logger.warning("Could not start scheduler: %s", e)
+    if SCHEDULER_ENABLED:
+        try:
+            start_scheduler()
+            logger.info("Auto-recrawl scheduler started")
+        except Exception as e:
+            logger.warning("Could not start scheduler: %s", e)
+    else:
+        logger.info("SCHEDULER_ENABLED is off — no automatic recrawls")
 
-    asyncio.create_task(_resolve_incomplete_hosts())
+    if REGISTRY_CRAWLER_ENABLED:
+        asyncio.create_task(_resolve_incomplete_hosts())
 
-    try:
-        from abyssal.crawler.registry_crawler import registry_crawl_loop
-        asyncio.create_task(registry_crawl_loop())
-        logger.info("Registry address book crawler started")
-    except Exception as e:
-        logger.warning("Could not start registry crawler: %s", e)
+        try:
+            from abyssal.crawler.registry_crawler import registry_crawl_loop
+            asyncio.create_task(registry_crawl_loop())
+            logger.info("Registry address book crawler started")
+        except Exception as e:
+            logger.warning("Could not start registry crawler: %s", e)
+    else:
+        logger.info("REGISTRY_CRAWLER_ENABLED is off — no registry crawling")
 
 
 async def _resolve_incomplete_hosts():
