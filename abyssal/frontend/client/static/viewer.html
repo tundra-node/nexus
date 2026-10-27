@@ -47,13 +47,12 @@ if (!snapshotId) {
     .then(d => {
       const frame = document.createElement('iframe');
       frame.id = 'snapshot-frame';
-      frame.sandbox = 'allow-same-origin allow-scripts allow-forms';
+      // Archived pages are untrusted: no scripts, and an opaque origin so
+      // nothing in the snapshot can reach this site's storage or API.
+      frame.sandbox = 'allow-popups';
+      frame.srcdoc = d.content;
       document.getElementById('frame-container').innerHTML = '';
       document.getElementById('frame-container').appendChild(frame);
-      const doc = frame.contentDocument || frame.contentWindow.document;
-      doc.open();
-      doc.write(d.content);
-      doc.close();
     })
     .catch(e => {
       document.getElementById('loading').innerHTML = `<p>Error loading snapshot: ${e.message}</p>`;

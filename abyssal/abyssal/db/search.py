@@ -1,3 +1,5 @@
+import html
+import re
 from typing import Optional
 
 import aiosqlite
@@ -12,6 +14,41 @@ async def get_db() -> aiosqlite.Connection:
     return db
 
 
+_HL_OPEN = "\x02"
+_HL_CLOSE = "\x03"
+
+
+def fts_query(q: str) -> str:
+    """Turn free text into an FTS5 query that cannot be a syntax error.
+
+    Each whitespace separated term becomes a quoted phrase, so input like
+    `stats.i2p`, `c++` or a stray quote is searched for instead of parsed as
+    FTS5 operators. A trailing `*` is kept as a prefix search.
+    """
+    parts = []
+    for term in q.split():
+        prefix = term.endswith("*")
+        term = term.rstrip("*").replace('"', '""')
+        if not term.strip('"'):
+            continue
+        parts.append(f'"{term}"' + ("*" if prefix else ""))
+    return " ".join(parts)
+
+
+def _clean_snippet(raw: str) -> str:
+    """Make an FTS snippet safe to render as HTML.
+
+    The index holds raw page HTML, so a snippet can contain markup from the
+    crawled site. Strip tags, escape what is left, then restore the match
+    highlighting.
+    """
+    text = re.sub(r"<[^>]*>", " ", raw)
+    text = re.sub(r"^[^<]*>|<[^>]*$", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = html.escape(text)
+    return text.replace(_HL_OPEN, "<b>").replace(_HL_CLOSE, "</b>")
+
+
 async def search_pages(
     q: str,
     language: str = "",
@@ -20,10 +57,13 @@ async def search_pages(
     per_page: int = 20,
 ) -> dict:
     offset = (page - 1) * per_page
+    match = fts_query(q)
+    if not match:
+        return {"results": [], "total": 0, "page": page, "per_page": per_page, "total_pages": 0}
     db = await get_db()
 
     conditions = ["pages_fts MATCH ?"]
-    params = [q]
+    params = [match]
 
     if language:
         conditions.append("p.language = ?")
@@ -82,7 +122,7 @@ async def search_pages(
     for host, r in page_results:
         result = dict(r)
         result["hostname"] = host
-        snippet = await _get_snippet(db, r["id"], q)
+        snippet = await _get_snippet(db, r["id"], match)
         result["snippet"] = snippet
         results.append(result)
 
@@ -100,12 +140,12 @@ async def search_pages(
 async def _get_snippet(db: aiosqlite.Connection, page_id: int, query: str, context_chars: int = 150) -> str:
     try:
         rows = await db.execute_fetchall(
-            f"SELECT snippet(pages_fts, 1, '<b>', '</b>', '...', {context_chars}) as sn "
-            f"FROM pages_fts WHERE rowid = ? AND pages_fts MATCH ?",
-            (page_id, query),
+            "SELECT snippet(pages_fts, 1, ?, ?, '...', ?) as sn "
+            "FROM pages_fts WHERE rowid = ? AND pages_fts MATCH ?",
+            (_HL_OPEN, _HL_CLOSE, min(context_chars, 64), page_id, query),
         )
         if rows and rows[0]["sn"]:
-            return rows[0]["sn"]
+            return _clean_snippet(rows[0]["sn"])
     except Exception:
         pass
 
@@ -114,7 +154,7 @@ async def _get_snippet(db: aiosqlite.Connection, page_id: int, query: str, conte
     )
     if rows and rows[0]["description"]:
         desc = rows[0]["description"]
-        return desc[:context_chars * 2]
+        return html.escape(desc[:context_chars * 2])
 
     return ""
 
