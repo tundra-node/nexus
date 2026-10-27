@@ -312,7 +312,8 @@ async def run_webconsole_command(cmd: str) -> str:
     token = await get_webconsole_token()
     async with httpx.AsyncClient(timeout=5.0) as c:
         r = await c.get(
-            f"{WEBCONSOLE_URL}/?cmd={cmd}&token={token}",
+            f"{WEBCONSOLE_URL}/",
+            params={"cmd": cmd, "token": token},
             headers={"Host": "localhost"},
         )
         return r.text

@@ -3,6 +3,7 @@ Prism Router API — FastAPI route handlers.
 """
 
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -220,6 +221,8 @@ async def run_command(
     api_key: Optional[str] = Header(None, alias="x-api-key"),
 ):
     await verify_api_key(api_key)
+    if not re.fullmatch(r"[A-Za-z0-9_]+", cmd_id):
+        raise HTTPException(status_code=400, detail="Invalid command id")
     try:
         await _client().run_webconsole_command(cmd_id)
         return {"status": "ok", "command": cmd_id}
