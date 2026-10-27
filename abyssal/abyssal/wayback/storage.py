@@ -20,8 +20,7 @@ def _host_dir(url: str) -> Path:
     return ARCHIVE_ROOT / safe
 
 
-def _snapshot_filename(url: str, status_code: int) -> tuple[str, str]:
-    now = datetime.now(timezone.utc)
+def _snapshot_filename(url: str, status_code: int, now: datetime) -> tuple[str, str]:
     ts = now.strftime("%Y%m%d_%H%M%S")
     h = hashlib.sha256(url.encode()).hexdigest()[:8]
     filename = f"{ts}_{status_code}_{h}.html"
@@ -29,8 +28,10 @@ def _snapshot_filename(url: str, status_code: int) -> tuple[str, str]:
 
 
 def store_snapshot(url: str, content: str, status_code: int = 200,
-                   content_type: str = "text/html") -> dict:
-    ts, filename = _snapshot_filename(url, status_code)
+                   content_type: str = "text/html",
+                   captured_at: Optional[datetime] = None) -> dict:
+    now = captured_at or datetime.now(timezone.utc)
+    ts, filename = _snapshot_filename(url, status_code, now)
     host_dir = _host_dir(url)
     host_dir.mkdir(parents=True, exist_ok=True)
 
@@ -39,7 +40,7 @@ def store_snapshot(url: str, content: str, status_code: int = 200,
     file_path.write_bytes(content_bytes)
 
     meta = {
-        "snapshot_time": datetime.now(timezone.utc).isoformat(),
+        "snapshot_time": now.isoformat(),
         "file_path": str(file_path),
         "url": url,
         "status_code": status_code,

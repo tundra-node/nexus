@@ -400,7 +400,7 @@ async def seed(force: bool = False) -> int:
             captured = now - timedelta(days=days_ago)
             snapshot_url = f"http://{host}{path}"
             payload = _snapshot_html(host, title, body)
-            stored = store_snapshot(snapshot_url, payload, captured)
+            stored = store_snapshot(snapshot_url, payload, 200, captured_at=captured)
             await add_snapshot(
                 url=snapshot_url,
                 snapshot_time=_iso(captured),
