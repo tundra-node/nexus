@@ -99,6 +99,8 @@ Everything is read from the environment at startup.
 | Variable | Default | What it does |
 |---|---|---|
 | `API_KEY` | `dev-key-12345` | value the `api-key` header must send to reach admin routes |
+| `PROXY_TOKEN` | derived from `API_KEY` | proxy-only token put in public page and snapshot views; fetches `.i2p` hosts only |
+| `BROWSER_TOKEN` | derived from `API_KEY` | proxy-only token the Prism dashboard uses for its browser tab |
 | `I2PD_HTTP_PROXY` | `http://i2pd:4444` | proxy the crawler and the resolver fetch through |
 | `DB_PATH` | `/data/crawler.db` | SQLite file for the index, jobs, and archive metadata |
 | `ARCHIVE_ROOT` | `/data/archive` | where snapshot files are written |

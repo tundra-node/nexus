@@ -627,10 +627,22 @@ See [PRECOMMIT.md](PRECOMMIT.md) for the full pre-commit checklist.
 cd ~/Developer/nexus
 python -m pytest tests/ -v
 
-# Syntax check only (no services needed)
-python -m py_compile tests/abyssal/test_api.py tests/prism/test_api.py
+# Offline unit tests (no services needed)
+abyssal/.venv/bin/python -m pytest tests/abyssal/test_unit.py tests/prism/test_browser_unit.py
+
+# Integration suites against local services instead of Docker
+ABYSSAL_URL=http://127.0.0.1:8000 python -m pytest tests/abyssal/test_api.py
+PRISM_ROUTER_URL=... PRISM_BROWSER_URL=... PRISM_ADDRESSBOOK_URL=... python -m pytest tests/prism/test_api.py
 ```
 
 ### Test Files
-- `tests/abyssal/test_api.py` — 34 tests for Abyssal API (search, directory, wayback, addressbook, crawler admin)
-- `tests/prism/test_api.py` — 25 tests for Prism API (router, browser, addressbook, error handling)
+- `tests/abyssal/test_api.py` — 27 integration tests for Abyssal API (search, directory, wayback, addressbook, crawler admin)
+- `tests/prism/test_api.py` — 32 integration tests for Prism API (router, browser, addressbook, error handling)
+- `tests/abyssal/test_unit.py` — offline tests for FTS query building, snippet escaping, hostname SQL, snapshot storage, URL rewriting
+- `tests/prism/test_browser_unit.py` — offline tests for browser proxy token auth and sandbox headers
+
+### Browser proxy auth
+- `/api/browser/proxy` accepts the `x-api-key` header, `?token=BROWSER_TOKEN` (any host), or `?token=PROXY_TOKEN` (`.i2p` only).
+- Both tokens are HMAC-derived from `API_KEY` unless set explicitly. Never put `API_KEY` in a URL or in rewritten HTML.
+- Abyssal page/snapshot views embed `PROXY_TOKEN`; the Prism dashboard fetches `BROWSER_TOKEN` from `GET /api/browser/token`.
+- Proxied responses carry `Content-Security-Policy: sandbox ...` so third-party scripts run in an opaque origin.
