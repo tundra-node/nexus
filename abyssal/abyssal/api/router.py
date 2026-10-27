@@ -356,7 +356,7 @@ async def _render_hosts_txt(active_only: bool = False) -> str:
 
 @router.get("/addressbook/hosts.txt")
 async def hosts_txt(
-    filter: str = Query("all", regex="^(all|active)$"),
+    filter: str = Query("all", pattern="^(all|active)$"),
 ):
     """
     Public hosts.txt export.
