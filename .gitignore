@@ -16,3 +16,8 @@ __pycache__/
 # i2pd control-API TLS keypair is generated locally; never commit it
 prism/i2pd/certs/
 *.tsbuildinfo
+
+# old local Prism run state
+prism/backend/crawler.db
+prism/backend/archive/
+prism/backend/browser_bookmarks.json
