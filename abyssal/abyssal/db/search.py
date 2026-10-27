@@ -14,6 +14,16 @@ async def get_db() -> aiosqlite.Connection:
     return db
 
 
+def _host_sql(col: str = "url") -> str:
+    """SQL expression for the hostname part of a URL column (no scheme, no path)."""
+    rest = f"SUBSTR({col}, INSTR({col}, '://') + 3)"
+    return (
+        f"CASE WHEN INSTR({rest}, '/') > 0 "
+        f"THEN SUBSTR({rest}, 1, INSTR({rest}, '/') - 1) "
+        f"ELSE {rest} END"
+    )
+
+
 _HL_OPEN = "\x02"
 _HL_CLOSE = "\x03"
 
@@ -45,7 +55,7 @@ def _clean_snippet(raw: str) -> str:
     text = re.sub(r"<[^>]*>", " ", raw)
     text = re.sub(r"^[^<]*>|<[^>]*$", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
-    text = html.escape(text)
+    text = html.escape(html.unescape(text))
     return text.replace(_HL_OPEN, "<b>").replace(_HL_CLOSE, "</b>")
 
 
@@ -216,9 +226,9 @@ async def get_site(hostname: str) -> Optional[dict]:
 
     pages = await db.execute_fetchall(
         "SELECT id, url, title, language, site_type, crawled_at "
-        "FROM crawled_pages WHERE url LIKE ? "
+        f"FROM crawled_pages WHERE {_host_sql()} = ? "
         "ORDER BY crawled_at ASC LIMIT 200",
-        (f"%{hostname}%",),
+        (hostname,),
     )
     site["pages"] = [dict(p) for p in pages]
     site["page_tree"] = _build_page_tree(site["pages"])
@@ -249,18 +259,19 @@ async def get_sites(
         if online:
             conditions.append("s.checks_online > s.checks_offline AND s.checks_online > 0")
         else:
-            conditions.append("s.checks_offline >= s.checks_online OR s.checks_online = 0")
+            conditions.append("(s.checks_offline >= s.checks_online OR s.checks_online = 0)")
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
     # Subquery gets latest page per hostname (avoids JOIN multiplication)
+    host = _host_sql()
     base = (
         "FROM site_status s "
         "LEFT JOIN ("
-        "  SELECT DISTINCT SUBSTR(url, INSTR(url, '://') + 3) AS hostname, "
-        "    FIRST_VALUE(title) OVER (PARTITION BY SUBSTR(url, INSTR(url, '://') + 3) ORDER BY crawled_at DESC) AS title, "
-        "    FIRST_VALUE(language) OVER (PARTITION BY SUBSTR(url, INSTR(url, '://') + 3) ORDER BY crawled_at DESC) AS language, "
-        "    FIRST_VALUE(site_type) OVER (PARTITION BY SUBSTR(url, INSTR(url, '://') + 3) ORDER BY crawled_at DESC) AS site_type "
+        f"  SELECT DISTINCT {host} AS hostname, "
+        f"    FIRST_VALUE(title) OVER (PARTITION BY {host} ORDER BY crawled_at DESC) AS title, "
+        f"    FIRST_VALUE(language) OVER (PARTITION BY {host} ORDER BY crawled_at DESC) AS language, "
+        f"    FIRST_VALUE(site_type) OVER (PARTITION BY {host} ORDER BY crawled_at DESC) AS site_type "
         "  FROM crawled_pages"
         ") latest ON s.hostname = latest.hostname "
     )
@@ -296,7 +307,7 @@ async def get_facets() -> dict:
 
     languages = await db.execute_fetchall(
         "SELECT ss.language, COUNT(*) as count FROM ("
-        "  SELECT DISTINCT SUBSTR(url, INSTR(url, '://') + 3) AS hostname, language "
+        f"  SELECT DISTINCT {_host_sql()} AS hostname, language "
         "  FROM crawled_pages WHERE language != ''"
         ") ss "
         "GROUP BY ss.language ORDER BY count DESC"
@@ -304,7 +315,7 @@ async def get_facets() -> dict:
 
     site_types = await db.execute_fetchall(
         "SELECT ss.site_type, COUNT(*) as count FROM ("
-        "  SELECT DISTINCT SUBSTR(url, INSTR(url, '://') + 3) AS hostname, site_type "
+        f"  SELECT DISTINCT {_host_sql()} AS hostname, site_type "
         "  FROM crawled_pages WHERE site_type != '' AND site_type != 'website'"
         ") ss "
         "GROUP BY ss.site_type ORDER BY count DESC"

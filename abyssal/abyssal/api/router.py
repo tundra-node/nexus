@@ -1,9 +1,10 @@
 import asyncio
 import logging
+import secrets
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Header, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from abyssal.config import API_KEY
 from abyssal.crawler import db as crawler_db
@@ -24,7 +25,7 @@ router = APIRouter(prefix="/api/abyssal", tags=["abyssal"])
 
 
 async def require_admin(api_key: str = Header("")):
-    if api_key != API_KEY:
+    if not secrets.compare_digest(api_key.encode(), API_KEY.encode()):
         raise HTTPException(status_code=403, detail="Invalid API key")
 
 
@@ -44,8 +45,8 @@ async def search(
     q: str = Query(""),
     language: str = Query(""),
     site_type: str = Query(""),
-    page: int = Query(1),
-    per_page: int = Query(20),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
 ):
     if not q:
         return {"results": [], "total": 0, "page": 1, "per_page": per_page, "total_pages": 0}
@@ -65,8 +66,8 @@ async def list_sites(
     language: str = Query(""),
     site_type: str = Query(""),
     online: Optional[bool] = Query(None),
-    page: int = Query(1),
-    per_page: int = Query(50),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
 ):
     return await search_db.get_sites(language, site_type, online, page, per_page)
 
@@ -97,10 +98,10 @@ async def graph():
 
 class StartCrawlRequest(BaseModel):
     url: str
-    max_pages: int = 0
-    max_depth: int = 5
-    concurrency: int = 3
-    delay_seconds: float = 2.0
+    max_pages: int = Field(0, ge=0)
+    max_depth: int = Field(5, ge=0)
+    concurrency: int = Field(3, ge=1, le=20)
+    delay_seconds: float = Field(2.0, ge=0, le=60)
 
 
 def _normalize_seed_url(raw: str) -> str:
@@ -214,8 +215,8 @@ async def wayback_urls(
 @router.get("/wayback/snapshots")
 async def wayback_snapshots(
     url: str = Query(""),
-    limit: int = Query(500),
-    offset: int = Query(0),
+    limit: int = Query(500, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
     if not url:
         return {"snapshots": [], "total": 0}
@@ -259,7 +260,11 @@ async def view_snapshot(snapshot_id: int, raw: bool = Query(False)):
 
 
 @router.get("/wayback/search")
-async def wayback_search(q: str = Query(""), limit: int = Query(50), offset: int = Query(0)):
+async def wayback_search(
+    q: str = Query(""),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
     if not q:
         return []
     return await wb_db.search_snapshots(q, limit, offset)
