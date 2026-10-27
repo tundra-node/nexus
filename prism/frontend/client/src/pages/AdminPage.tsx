@@ -78,8 +78,8 @@ export default function AdminPage() {
         <p className="truncate font-medium">{job.url}</p>
         <p className="text-xs text-muted-foreground mt-0.5">
           {job.pages_crawled} pages &middot; depth {job.max_depth} &middot; {job.concurrency}w
-          {job.pages_failed > 0 && <> &middot; <span className="text-red-500">{job.pages_failed} failed</span></>}
-          {job.pages_limited > 0 && <> &middot; <span className="text-amber-500">{job.pages_limited} limited</span></>}
+          {(job.pages_failed ?? 0) > 0 && <> &middot; <span className="text-red-500">{job.pages_failed} failed</span></>}
+          {(job.pages_limited ?? 0) > 0 && <> &middot; <span className="text-amber-500">{job.pages_limited} limited</span></>}
           {job.finished_at && <> &middot; done {new Date(job.finished_at).toLocaleDateString()}</>}
         </p>
       </div>
