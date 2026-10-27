@@ -409,7 +409,7 @@ class SiteDetailPage {
               <span style="color:${snap.status_code === 200 ? 'var(--green)' : 'var(--orange)'}">HTTP ${snap.status_code}</span>
               <span style="color:var(--dim);flex:1">${snap.snapshot_time || ''}</span>
               ${snap.size_bytes ? `<span style="color:var(--dim)">${formatBytes(snap.size_bytes)}</span>` : ''}
-              <a href="#" onclick="window.open('/viewer.html?id=${snap.id}&url=${encodeURIComponent(url)}','_blank','width=1024,height=768');return false" style="padding:0.2rem 0.5rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-size:0.75rem;text-decoration:none;color:var(--text)">View</a>
+              <a href="/viewer.html?id=${encodeURIComponent(snap.id)}&url=${esc(encodeURIComponent(url))}" target="_blank" rel="noopener" style="padding:0.2rem 0.5rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-size:0.75rem;text-decoration:none;color:var(--text)">View</a>
             </div>`).join('')}
         </div>`;
       } else {
@@ -537,7 +537,7 @@ window.showSnapshots = async function(id) {
         <span style="color:${s.status_code === 200 ? 'var(--green)' : 'var(--orange)'}">HTTP ${s.status_code}</span>
         <span style="color:var(--dim)">${s.snapshot_time || ''}</span>
         ${s.size_bytes ? `<span style="color:var(--dim)">${formatBytes(s.size_bytes)}</span>` : ''}
-        <a href="#" onclick="viewSnapshot('${s.id}','${esc(url)}');return false" style="margin-left:auto;color:var(--accent2)">View</a>
+        <a href="/viewer.html?id=${encodeURIComponent(s.id)}&url=${esc(encodeURIComponent(url))}" target="_blank" rel="noopener" style="margin-left:auto;color:var(--accent2)">View</a>
       </div>`).join('');
   } catch (e) { el.innerHTML = errorBox(e.message, () => showSnapshots(id)); }
 };
