@@ -40,7 +40,13 @@ It also has a browser tab that proxies `.i2p` pages through your own router and 
 
 ### Docker
 
+Create the shared env file and the I2PControl TLS keypair that the compose file mounts into i2pd:
+
 ```bash
+cp abyssal/.env.example abyssal/.env
+mkdir -p prism/i2pd/certs
+openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=i2pd" \
+  -keyout prism/i2pd/certs/i2pcontrol.key.pem -out prism/i2pd/certs/i2pcontrol.crt.pem
 docker compose -f abyssal/docker-compose.yml up --build
 ```
 
