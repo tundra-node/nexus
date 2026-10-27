@@ -15,11 +15,9 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
-import aiosqlite
 
-from abyssal.config import I2PD_HTTP_PROXY, DB_PATH
+from abyssal.config import I2PD_HTTP_PROXY
 from abyssal.crawler.db import get_db, upsert_site_status
-from abyssal.resolver.resolver import resolve_host
 
 logger = logging.getLogger(__name__)
 

@@ -16,8 +16,6 @@ from .models import (
     TunnelEntry,
     TunnelsResponse,
     RouterInfoResponse,
-    TransportInfo,
-    I2pTunnelDestination,
     SetBandwidthRequest,
 )
 

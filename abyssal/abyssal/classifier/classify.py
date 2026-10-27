@@ -43,14 +43,14 @@ _STOPWORDS: dict[str, set[str]] = {
            "quand", "comme", "très", "tous", "toute", "deux", "peut",
            "faire", "bien", "avoir", "autre", "chaque", "avant", "après",
            "encore", "alors", "donc", "même", "votre", "notre", "voici",
-           "voilà", "peu", "mon", "ton", "son", "leur", "où", "parce"},
+           "voilà", "peu", "mon", "ton", "son", "où", "parce"},
     "es": {"el", "la", "los", "las", "del", "por", "con", "para", "como",
            "más", "pero", "sus", "una", "este", "esta", "entre", "tiene",
            "todo", "parte", "tiempo", "cada", "también", "desde", "hasta",
            "durante", "según", "contra", "antes", "después", "siempre",
            "nunca", "mismo", "otro", "donde", "quien", "cual", "cuando",
            "muchos", "poco", "gran", "mayor", "mejor", "además", "incluso",
-           "forma", "valor", "sobre", "entre", "tras", "cerca"},
+           "forma", "valor", "sobre", "tras", "cerca"},
     "pt": {"o", "a", "os", "as", "do", "da", "em", "com", "para", "por",
            "mais", "como", "dos", "das", "uma", "seu", "sua", "ser", "tem",
            "era", "muito", "foi", "pode", "estar", "após", "antes", "entre",
@@ -79,9 +79,9 @@ _STOPWORDS: dict[str, set[str]] = {
            "var", "de", "av", "på", "sin", "sine", "sitt", "deres", "dens",
            "over", "under", "mellom", "uten", "også", "bare", "blir", "ble"},
     "fi": {"ja", "on", "ei", "se", "ovat", "ole", "myös", "sen", "hän",
-           "mutta", "oli", "voi", "kanssa", "joka", "ovat", "tai", "kun",
+           "mutta", "oli", "voi", "kanssa", "joka", "tai", "kun",
            "sillä", "vain", "sitten", "vielä", "pitää", "sama", "tästä",
-           "siitä", "tästä", "tähän", "välillä", "ilman", "aikana", "alue"},
+           "siitä", "tähän", "välillä", "ilman", "aikana", "alue"},
 }
 
 
@@ -271,7 +271,6 @@ _OG_TYPES: dict[str, str] = {
 
 
 def classify_site_type(soup: BeautifulSoup, url: str) -> str:
-    html_text = str(soup)
     meta_gen = ""
     og_type = ""
     application_name = ""

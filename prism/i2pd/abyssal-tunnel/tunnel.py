@@ -1,4 +1,4 @@
-import socket, threading, time, os, sys, logging, json, base64, hashlib
+import socket, threading, time, os, logging, json, base64, hashlib
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("tunnel")

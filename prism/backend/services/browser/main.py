@@ -5,7 +5,6 @@ Proxy fetching + bookmarks.
 
 import json
 import logging
-import re
 import urllib.parse
 from pathlib import Path
 from typing import Optional, Dict, List

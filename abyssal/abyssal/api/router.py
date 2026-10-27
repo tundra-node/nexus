@@ -11,7 +11,7 @@ from abyssal.crawler.worker import crawl_job, cancel_job
 from abyssal.db import search as search_db
 from abyssal.wayback import db as wb_db
 from abyssal.wayback import storage as wb_storage
-from abyssal.wayback.rewrite import rewrite_external_urls, inline_css
+from abyssal.wayback.rewrite import rewrite_external_urls
 from abyssal.config import I2PD_HTTP_PROXY
 
 logger = logging.getLogger(__name__)
