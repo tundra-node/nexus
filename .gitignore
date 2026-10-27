@@ -12,3 +12,6 @@ __pycache__/
 .local/
 .venv/
 *.egg-info/
+
+# i2pd control-API TLS keypair is generated locally; never commit it
+prism/i2pd/certs/
