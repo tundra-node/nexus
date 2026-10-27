@@ -8,7 +8,7 @@ from typing import Optional
 import httpx
 from bs4 import BeautifulSoup
 
-from abyssal.config import API_KEY
+from abyssal.config import PROXY_TOKEN
 
 logger = logging.getLogger(__name__)
 
@@ -124,8 +124,7 @@ def _rewrite_css_urls(css_text: str, base_url: str, proxy_base: str) -> str:
 
 def rewrite_external_urls(html: str, base_url: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
-    api_key = API_KEY or "dev-key-12345"
-    proxy_base = f"/api/browser/proxy?api_key={api_key}&url="
+    proxy_base = f"/api/browser/proxy?token={PROXY_TOKEN}&url="
 
     def _proxy_url(url: str) -> str:
         if not url or url.startswith("#") or url.startswith("javascript:") or url.startswith("data:"):

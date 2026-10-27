@@ -445,8 +445,19 @@ export async function saveBookmarks(bookmarks: Bookmark[]) {
   await apiClient.post("/api/browser/bookmarks", bookmarks);
 }
 
+// Proxy-only token, so iframe URLs (which proxied pages can read) never carry the API key.
+let proxyToken = "";
+
+export async function loadProxyToken(): Promise<string> {
+  if (!proxyToken) {
+    const r = await apiClient.get<{ token: string }>("/api/browser/token");
+    proxyToken = r.data.token;
+  }
+  return proxyToken;
+}
+
 export function proxyUrl(url: string): string {
-  return `${API_BASE_URL}/api/browser/proxy?url=${encodeURIComponent(url)}&api_key=${encodeURIComponent(API_KEY)}`;
+  return `${API_BASE_URL}/api/browser/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(proxyToken)}`;
 }
 
 // ---------------------------------------------------------------------------

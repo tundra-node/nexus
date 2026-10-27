@@ -32,6 +32,7 @@ import {
   useBookmarks,
   saveBookmarks,
   proxyUrl,
+  loadProxyToken,
   normalizeUrl,
   type Bookmark,
 } from "@/hooks/useI2pdApi";
@@ -146,6 +147,13 @@ export default function BrowserPage() {
   const [newBmName, setNewBmName] = useState("");
   const [newBmUrl, setNewBmUrl] = useState("");
   const [jsEnabled, setJsEnabled] = useState(false);
+  const [proxyReady, setProxyReady] = useState(false);
+
+  useEffect(() => {
+    loadProxyToken()
+      .then(() => setProxyReady(true))
+      .catch(() => toast.error("Could not get a browser proxy token"));
+  }, []);
   const [zoom, setZoom] = useState(1);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
@@ -275,6 +283,7 @@ export default function BrowserPage() {
     const url = activeTab.currentUrl;
     if (!url) return;
     try {
+      await loadProxyToken();
       const resp = await fetch(proxyUrl(url));
       const html = await resp.text();
       const blob = new Blob([html], { type: "text/html" });
@@ -581,7 +590,7 @@ export default function BrowserPage() {
               className={tab.id === activeTabId ? "block" : "hidden"}
               style={{ minHeight: "100%" }}
             >
-              {tab.currentUrl && (
+              {tab.currentUrl && proxyReady && (
                 <iframe
                   key={tab.iframeKey}
                   ref={(el) => { iframeRefs.current.set(tab.id, el); }}

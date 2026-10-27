@@ -1,4 +1,6 @@
 from pathlib import Path
+import hashlib
+import hmac
 import os
 
 
@@ -11,6 +13,12 @@ def _flag(name: str, default: bool = True) -> bool:
 
 
 API_KEY = os.getenv("API_KEY", "dev-key-12345")
+# Proxy-only token embedded in public page and snapshot views so their images
+# and stylesheets load through the Prism browser proxy. It must match Prism's
+# PROXY_TOKEN, which is derived from the shared API_KEY the same way.
+PROXY_TOKEN = os.getenv("PROXY_TOKEN") or hmac.new(
+    API_KEY.encode(), b"nexus-proxy", hashlib.sha256
+).hexdigest()[:32]
 I2PD_HTTP_PROXY = os.getenv("I2PD_HTTP_PROXY", "http://i2pd:4444")
 DB_PATH = os.getenv("DB_PATH", "/data/crawler.db")
 ARCHIVE_ROOT = Path(os.getenv("ARCHIVE_ROOT", "/data/archive"))
